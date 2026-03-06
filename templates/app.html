@@ -662,7 +662,8 @@ async function init() {
     document.getElementById('ua-name').textContent = me.username;
     document.getElementById('ua-role').textContent = me.role === 'admin' ? '👑 Admin' : '👁️ Lecteur';
     // Avatar : photo ou initiale
-    const savedPic = LS.get('profile_pic_' + me.id);
+    const savedPic = me.profile_pic || LS.get('profile_pic_' + me.id) || '';
+    if (me.profile_pic) LS.set('profile_pic_' + me.id, me.profile_pic);
     const ua = document.getElementById('ua-avatar');
     if (savedPic) {
       ua.innerHTML = `<img src="${savedPic}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
@@ -1161,7 +1162,7 @@ async function refreshSettings() {
     document.getElementById('profile-role-display').textContent = STATE.user.role === 'admin' ? '👑 Administrateur' : '👁️ Lecteur';
     document.getElementById('profile-avatar-letter').textContent = STATE.user.username[0].toUpperCase();
     // Charger photo de profil si elle existe
-    const pic = LS.get('profile_pic_' + STATE.user.id);
+    const pic = STATE.user.profile_pic || LS.get('profile_pic_' + STATE.user.id) || '';
     if (pic) {
       document.getElementById('profile-avatar-img').src = pic;
       document.getElementById('profile-avatar-img').style.display = 'block';
@@ -1203,24 +1204,36 @@ async function refreshSettings() {
 function uploadProfilePic(input) {
   const file = input.files[0];
   if (!file) return;
-  if (file.size > 2 * 1024 * 1024) { notify('Image trop grande (max 2 Mo)', 'var(--red)'); return; }
+  if (file.size > 2_000_000) { notify('Image trop grande (max 2 Mo)', 'var(--red)'); return; }
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     const dataUrl = e.target.result;
-    LS.set('profile_pic_' + STATE.user.id, dataUrl);
+    // Sauvegarder localement
+    LS.set('profile_pic_' + (STATE.user?.id||''), dataUrl);
+    // Sauvegarder sur le serveur (sync partout)
+    const res = await api('PUT', '/api/me/profile-pic', { profile_pic: dataUrl });
+    if (res && res.ok) {
+      notify('Photo de profil synchronisée ✓', 'var(--green)');
+    } else {
+      notify('Photo sauvegardée localement (hors ligne)', 'var(--orange)');
+    }
     refreshSettings();
-    notify('Photo de profil mise à jour ✓', 'var(--green)');
+    // Mettre à jour l'avatar sidebar
+    const ua = document.getElementById('ua-avatar');
+    if (ua) ua.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
   };
   reader.readAsDataURL(file);
 }
 
 function removeProfilePic() {
-  localStorage.removeItem('fp_profile_pic_' + STATE.user.id);
+  LS.set('profile_pic_' + (STATE.user?.id||''), null);
+  localStorage.removeItem('fp_profile_pic_' + (STATE.user?.id||''));
+  // Supprimer sur le serveur
+  api('DELETE', '/api/me/profile-pic');
   refreshSettings();
-  // Remettre l'avatar sidebar
   const ua = document.getElementById('ua-avatar');
   if (ua && STATE.user) ua.textContent = STATE.user.username[0].toUpperCase();
-  notify('Photo supprimée', 'var(--orange)');
+  notify('Photo supprimée', 'var(--red)');
 }
 
 // ── Sauvegarde JSON ──

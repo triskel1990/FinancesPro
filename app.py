@@ -14,8 +14,18 @@ import uuid
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changez-moi-en-production-!@#$%')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///financespro.db')
+
+# Railway fournit DATABASE_URL avec "postgres://" — SQLAlchemy exige "postgresql://"
+_db_url = os.environ.get('DATABASE_URL', 'sqlite:///financespro.db')
+if _db_url.startswith('postgres://'):
+    _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,       # vérifie la connexion avant chaque requête
+    'pool_recycle': 300,         # recycle les connexions toutes les 5 min
+    'connect_args': {} if 'sqlite' in _db_url else {'connect_timeout': 10},
+}
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -32,7 +42,8 @@ class User(UserMixin, db.Model):
     password   = db.Column(db.String(256), nullable=False)
     role       = db.Column(db.String(20), default='viewer')  # admin / viewer
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    taux       = db.Column(db.Integer, default=2300)
+    taux        = db.Column(db.Integer, default=2300)
+    profile_pic = db.Column(db.Text, nullable=True)  # photo base64
 
     revenus    = db.relationship('Revenu', backref='user', lazy=True, cascade='all,delete')
     depenses   = db.relationship('DepenseTemplate', backref='user', lazy=True, cascade='all,delete')
@@ -473,7 +484,29 @@ def api_user(uid):
 @app.route('/api/me')
 @login_required
 def api_me():
-    return jsonify({'id':current_user.id,'username':current_user.username,'role':current_user.role,'taux':current_user.taux})
+    return jsonify({
+        'id':          current_user.id,
+        'username':    current_user.username,
+        'role':        current_user.role,
+        'taux':        current_user.taux,
+        'profile_pic': current_user.profile_pic or '',
+    })
+
+@app.route('/api/me/profile-pic', methods=['PUT', 'DELETE'])
+@login_required
+def api_profile_pic():
+    if request.method == 'DELETE':
+        current_user.profile_pic = None
+        db.session.commit()
+        return jsonify({'ok': True})
+    data = request.get_json()
+    pic = data.get('profile_pic', '')
+    # Limiter à ~2 Mo (base64 ~2.7MB pour 2MB image)
+    if len(pic) > 3_000_000:
+        return jsonify({'ok': False, 'error': 'Image trop grande (max 2 Mo)'}), 400
+    current_user.profile_pic = pic
+    db.session.commit()
+    return jsonify({'ok': True})
 
 # ─────────────────────────────────────────
 # INIT DB
