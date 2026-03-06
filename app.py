@@ -12,6 +12,13 @@ import os
 import json
 import uuid
 
+# Charger .env en local (ignoré si la variable est déjà définie, ex: sur Railway)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changez-moi-en-production-!@#$%')
 
