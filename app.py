@@ -33,8 +33,11 @@ import time as _time
 _sqlite_path  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'financespro.db')
 _sqlite_url   = 'sqlite:///' + _sqlite_path
 _postgres_url = os.environ.get('DATABASE_URL', '')
+# Normaliser l'URL et forcer pg8000 (pur Python, pas de libpq nécessaire)
 if _postgres_url.startswith('postgres://'):
-    _postgres_url = _postgres_url.replace('postgres://', 'postgresql://', 1)
+    _postgres_url = _postgres_url.replace('postgres://', 'postgresql+pg8000://', 1)
+elif _postgres_url.startswith('postgresql://'):
+    _postgres_url = _postgres_url.replace('postgresql://', 'postgresql+pg8000://', 1)
 
 # Si DATABASE_URL est définie → on est sur Railway → PostgreSQL obligatoire
 _force_postgres = bool(_postgres_url)
@@ -43,16 +46,16 @@ _last_pg_check  = 0.0
 _pg_check_ttl   = 30
 
 def _test_postgres():
-    if not _postgres_url.startswith('postgresql://'):
+    if 'pg8000' not in _postgres_url:
         return False
     try:
-        import psycopg2
+        import pg8000
         from urllib.parse import urlparse
-        p = urlparse(_postgres_url)
-        conn = psycopg2.connect(
+        p = urlparse(_postgres_url.replace('postgresql+pg8000://', 'postgresql://'))
+        conn = pg8000.connect(
             host=p.hostname, port=p.port or 5432,
             user=p.username, password=p.password,
-            dbname=p.path.lstrip('/'), connect_timeout=5
+            database=p.path.lstrip('/'), timeout=5
         )
         conn.close()
         return True
