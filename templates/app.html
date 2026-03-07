@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FinancesPro</title>
 <link rel="icon"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💵</text></svg>">
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💵</text></svg>">
 
 <script src="/static/chart.min.js"></script>
 <script>
@@ -592,26 +592,35 @@ async function doSync(silent=false) {
   const payload = { taux: STATE.taux, mois: STATE.mois, dettes: STATE.dettes };
   const result = await api('POST', '/api/sync', payload);
   if (result && result.ok) {
-    // Merge server data
+    // Merge server data — le local gagne si son timestamp est plus récent ou si le serveur est vide
     if (result.mois) {
       for (const [k, v] of Object.entries(result.mois)) {
         const local = STATE.mois[k];
         const localTs = local?.updated_at || '';
         const serverTs = v?.updated_at || '';
-        if (!local || serverTs > localTs) STATE.mois[k] = v;
+        // Le serveur gagne seulement s'il a un timestamp ET plus récent que le local
+        if (serverTs && serverTs > localTs) {
+          STATE.mois[k] = v;
+        } else if (!STATE.mois[k] && serverTs) {
+          // Mois absent en local mais présent sur serveur avec données réelles
+          STATE.mois[k] = v;
+        }
+        // Si local existe et serverTs <= localTs : on garde le local (ne rien faire)
       }
     }
     if (result.dettes) {
       result.dettes.forEach(sd => {
         const li = STATE.dettes.findIndex(d => d.id === sd.id);
         if (li >= 0) {
-          if ((sd.updated_at||'') >= (STATE.dettes[li].updated_at||'')) STATE.dettes[li] = sd;
-        } else {
+          // Serveur gagne seulement s'il est plus récent
+          if ((sd.updated_at||'') > (STATE.dettes[li].updated_at||'')) STATE.dettes[li] = sd;
+        } else if (sd.updated_at) {
+          // Nouvelle dette serveur avec données réelles
           STATE.dettes.push(sd);
         }
       });
     }
-    if (result.taux) STATE.taux = result.taux;
+    if (result.taux && result.taux !== 2300) STATE.taux = result.taux;
     saveState();
     STATE.lastSync = now_iso();
     LS.set('lastSync', STATE.lastSync);
@@ -733,10 +742,11 @@ async function init() {
     api('GET', '/api/depenses-templates'),
     api('GET', '/api/dettes'),
   ]);
-  if (cats) { STATE.categories = cats; LS.set('categories', cats); }
-  if (revs) { STATE.revenus_templates = revs; LS.set('revenus_templates', revs); }
-  if (deps) LS.set('depenses_templates', deps);
-  if (dets) { STATE.dettes = dets; LS.set('dettes', dets); }
+  if (cats && cats.length) { STATE.categories = cats; LS.set('categories', cats); }
+  if (revs && revs.length) { STATE.revenus_templates = revs; LS.set('revenus_templates', revs); }
+  if (deps && deps.length) LS.set('depenses_templates', deps);
+  // Ne remplacer les dettes locales que si le serveur en retourne vraiment
+  if (dets && dets.length) { STATE.dettes = dets; LS.set('dettes', dets); }
 
   updateTauxDisplay();
   checkOnline();
