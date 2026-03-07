@@ -22,47 +22,98 @@ except ImportError:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changez-moi-en-production-!@#$%')
 
-# ── Détection automatique de la base de données ──
-# Si DATABASE_URL pointe vers PostgreSQL, on teste la connexion.
-# Si PostgreSQL est injoignable (pas internet), on bascule sur SQLite local.
-_sqlite_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'financespro.db')
-_sqlite_url  = 'sqlite:///' + _sqlite_path
+# ── Chemins et URLs de base ──
+_sqlite_path    = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'financespro.db')
+_sqlite_url     = 'sqlite:///' + _sqlite_path
+_postgres_url   = os.environ.get('DATABASE_URL', '')
+if _postgres_url.startswith('postgres://'):
+    _postgres_url = _postgres_url.replace('postgres://', 'postgresql://', 1)
 
-_db_url = os.environ.get('DATABASE_URL') or _sqlite_url
-if _db_url.startswith('postgres://'):
-    _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+import time as _time
+_last_pg_check  = 0       # timestamp du dernier test PostgreSQL
+_pg_check_ttl   = 30      # re-tester toutes les 30 secondes
+_using_sqlite   = True    # état courant (commence en SQLite jusqu'au premier test)
 
-_using_postgres = _db_url.startswith('postgresql://')
-_using_sqlite   = False
-
-if _using_postgres:
+def _test_postgres():
+    """Teste si PostgreSQL est joignable. Retourne True si oui."""
+    if not _postgres_url.startswith('postgresql://'):
+        return False
     try:
         import psycopg2
         from urllib.parse import urlparse
-        _p = urlparse(_db_url)
-        _conn = psycopg2.connect(
-            host=_p.hostname, port=_p.port or 5432,
-            user=_p.username, password=_p.password,
-            dbname=_p.path.lstrip('/'),
+        p = urlparse(_postgres_url)
+        conn = psycopg2.connect(
+            host=p.hostname, port=p.port or 5432,
+            user=p.username, password=p.password,
+            dbname=p.path.lstrip('/'),
             connect_timeout=3
         )
-        _conn.close()
-        print('[DB] PostgreSQL Railway connecté ✓')
-    except Exception as _e:
-        print(f'[DB] PostgreSQL injoignable ({_e}) — bascule sur SQLite local')
-        _db_url       = _sqlite_url
-        _using_sqlite = True
+        conn.close()
+        return True
+    except Exception:
+        return False
 
-app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
+def _get_db_url():
+    """Retourne l'URL DB active en testant PostgreSQL périodiquement."""
+    global _last_pg_check, _using_sqlite
+    now = _time.time()
+    if now - _last_pg_check >= _pg_check_ttl:
+        _last_pg_check = now
+        pg_ok = _test_postgres()
+        if pg_ok and _using_sqlite:
+            print('[DB] PostgreSQL Railway de nouveau joignable — bascule online ✓')
+            _using_sqlite = False
+            # Reconfigurer SQLAlchemy dynamiquement
+            app.config['SQLALCHEMY_DATABASE_URI'] = _postgres_url
+            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+                'pool_pre_ping': True, 'pool_recycle': 300,
+                'connect_args': {'connect_timeout': 10},
+            }
+            try:
+                db.engine.dispose()
+            except Exception:
+                pass
+        elif not pg_ok and not _using_sqlite:
+            print('[DB] PostgreSQL injoignable — bascule SQLite local')
+            _using_sqlite = True
+            app.config['SQLALCHEMY_DATABASE_URI'] = _sqlite_url
+            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+                'pool_pre_ping': True, 'pool_recycle': 300,
+                'connect_args': {},
+            }
+            try:
+                db.engine.dispose()
+            except Exception:
+                pass
+    return _sqlite_url if _using_sqlite else _postgres_url
+
+# ── Initialisation DB au démarrage ──
+_startup_pg = _test_postgres()
+_last_pg_check = _time.time()
+if _startup_pg:
+    _using_sqlite = False
+    _initial_db_url = _postgres_url
+    print('[DB] PostgreSQL Railway connecté ✓')
+else:
+    _using_sqlite = True
+    _initial_db_url = _sqlite_url
+    print('[DB] PostgreSQL injoignable au démarrage — mode SQLite local')
+
+app.config['SQLALCHEMY_DATABASE_URI'] = _initial_db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle':  300,
-    'connect_args':  {} if 'sqlite' in _db_url else {'connect_timeout': 10},
+    'connect_args':  {} if _using_sqlite else {'connect_timeout': 10},
 }
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
+
+@app.before_request
+def check_db_mode():
+    """Vérifie périodiquement si PostgreSQL est redevenu joignable."""
+    _get_db_url()
 login_manager.login_view = 'login'
 
 # ─────────────────────────────────────────
@@ -539,7 +590,8 @@ def api_profile_pic():
 
 @app.route('/api/mode')
 def api_mode():
-    """Indique au frontend quel mode la base utilise."""
+    """Indique au frontend quel mode la base utilise (mis à jour dynamiquement)."""
+    _get_db_url()  # force la vérification si TTL expiré
     return jsonify({
         'mode': 'sqlite' if _using_sqlite else 'postgresql',
         'offline': _using_sqlite
@@ -558,6 +610,15 @@ with app.app_context():
             print('[DB] Créez un compte sur http://localhost:5000 ou reconnectez internet.')
         else:
             print(f'[DB] Mode offline — {count} compte(s) local/locaux trouvé(s) ✓')
+    # Créer aussi les tables SQLite en avance pour le mode offline
+    if not _using_sqlite:
+        try:
+            from sqlalchemy import create_engine
+            _offline_engine = create_engine(_sqlite_url)
+            db.metadata.create_all(_offline_engine)
+            _offline_engine.dispose()
+        except Exception:
+            pass
 
 if __name__ == '__main__':
     mode = 'OFFLINE (SQLite local)' if _using_sqlite else 'ONLINE (PostgreSQL Railway)'
