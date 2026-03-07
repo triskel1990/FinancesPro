@@ -789,7 +789,7 @@ async function init() {
 
   // Charger les données mensuelles depuis le serveur (manquantes en localStorage sur Railway)
   if (moisList && moisList.length) {
-    document.getElementById('loading-msg').textContent = 'Chargement de l'historique…';
+    document.getElementById("loading-msg").textContent = "Chargement de l'historique…";
     const moisPromises = moisList.map(m => api('GET', '/api/mois/' + m.mois_key));
     const moisData = await Promise.all(moisPromises);
     moisData.forEach((md, i) => {
@@ -819,11 +819,18 @@ async function init() {
 
   // Sync + masquer overlay APRÈS que les données sont prêtes
   const overlay = document.getElementById('loading-overlay');
+  const overlayStart = Date.now();
+  const MIN_DISPLAY = 1200; // afficher au moins 1.2 secondes
+
   function hideOverlay() {
     if (!overlay) return;
-    overlay.style.transition = 'opacity 0.4s';
-    overlay.style.opacity = '0';
-    setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 400);
+    const elapsed = Date.now() - overlayStart;
+    const delay = Math.max(0, MIN_DISPLAY - elapsed);
+    setTimeout(() => {
+      overlay.style.transition = 'opacity 0.4s';
+      overlay.style.opacity = '0';
+      setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 400);
+    }, delay);
   }
 
   if (STATE.online) {
