@@ -785,12 +785,24 @@ async function init() {
     }
   } catch(e) {}
 
-  // Masquer l'overlay de chargement
+  // Sync + masquer overlay APRÈS que les données sont prêtes
   const overlay = document.getElementById('loading-overlay');
-  if (overlay) overlay.style.opacity = '0', overlay.style.transition = 'opacity 0.3s', setTimeout(() => overlay.remove(), 300);
+  function hideOverlay() {
+    if (!overlay) return;
+    overlay.style.transition = 'opacity 0.4s';
+    overlay.style.opacity = '0';
+    setTimeout(() => { if (overlay.parentNode) overlay.remove(); }, 400);
+  }
 
-  // Déclencher une sync silencieuse pour mettre à jour avec le serveur
-  if (STATE.online) setTimeout(() => doSync(true), 500);
+  if (STATE.online) {
+    // Sync d'abord, overlay disparaît quand sync terminée
+    document.getElementById('loading-msg').textContent = 'Synchronisation…';
+    doSync(true).then(() => hideOverlay()).catch(() => hideOverlay());
+  } else {
+    // Pas de connexion : afficher les données locales et masquer
+    refreshAll();
+    hideOverlay();
+  }
 
   // Vérifier les paiements automatiques au démarrage
   setTimeout(checkAutopayments, 1500);
