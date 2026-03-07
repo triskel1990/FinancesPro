@@ -25,20 +25,24 @@ app.config['REMEMBER_COOKIE_DURATION'] = 60 * 60 * 24 * 30  # 30 jours
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False
 
-# ── Chemins et URLs de base ──
-_sqlite_path    = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'financespro.db')
-_sqlite_url     = 'sqlite:///' + _sqlite_path
-_postgres_url   = os.environ.get('DATABASE_URL', '')
+# ── Détection base de données ──
+# Sur Railway (DATABASE_URL définie) : PostgreSQL obligatoire, pas de fallback SQLite
+# En local sans internet : fallback SQLite automatique
+import time as _time
+
+_sqlite_path  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'financespro.db')
+_sqlite_url   = 'sqlite:///' + _sqlite_path
+_postgres_url = os.environ.get('DATABASE_URL', '')
 if _postgres_url.startswith('postgres://'):
     _postgres_url = _postgres_url.replace('postgres://', 'postgresql://', 1)
 
-import time as _time
-_last_pg_check  = 0       # timestamp du dernier test PostgreSQL
-_pg_check_ttl   = 30      # re-tester toutes les 30 secondes
-_using_sqlite   = True    # état courant (commence en SQLite jusqu'au premier test)
+# Si DATABASE_URL est définie → on est sur Railway → PostgreSQL obligatoire
+_force_postgres = bool(_postgres_url)
+_using_sqlite   = False
+_last_pg_check  = 0.0
+_pg_check_ttl   = 30
 
 def _test_postgres():
-    """Teste si PostgreSQL est joignable. Retourne True si oui."""
     if not _postgres_url.startswith('postgresql://'):
         return False
     try:
@@ -48,8 +52,7 @@ def _test_postgres():
         conn = psycopg2.connect(
             host=p.hostname, port=p.port or 5432,
             user=p.username, password=p.password,
-            dbname=p.path.lstrip('/'),
-            connect_timeout=3
+            dbname=p.path.lstrip('/'), connect_timeout=5
         )
         conn.close()
         return True
@@ -57,50 +60,48 @@ def _test_postgres():
         return False
 
 def _get_db_url():
-    """Retourne l'URL DB active en testant PostgreSQL périodiquement."""
+    """En local : bascule dynamique. Sur Railway : toujours PostgreSQL."""
     global _last_pg_check, _using_sqlite
+    if _force_postgres:
+        return _postgres_url  # Railway : jamais de SQLite
     now = _time.time()
     if now - _last_pg_check >= _pg_check_ttl:
         _last_pg_check = now
         pg_ok = _test_postgres()
         if pg_ok and _using_sqlite:
-            print('[DB] PostgreSQL Railway de nouveau joignable — bascule online ✓')
+            print('[DB] PostgreSQL de nouveau joignable — bascule online ✓')
             _using_sqlite = False
-            # Reconfigurer SQLAlchemy dynamiquement
             app.config['SQLALCHEMY_DATABASE_URI'] = _postgres_url
-            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-                'pool_pre_ping': True, 'pool_recycle': 300,
-                'connect_args': {'connect_timeout': 10},
-            }
-            try:
-                db.engine.dispose()
-            except Exception:
-                pass
+            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True, 'pool_recycle': 300, 'connect_args': {'connect_timeout': 10}}
+            try: db.engine.dispose()
+            except: pass
         elif not pg_ok and not _using_sqlite:
             print('[DB] PostgreSQL injoignable — bascule SQLite local')
             _using_sqlite = True
             app.config['SQLALCHEMY_DATABASE_URI'] = _sqlite_url
-            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-                'pool_pre_ping': True, 'pool_recycle': 300,
-                'connect_args': {},
-            }
-            try:
-                db.engine.dispose()
-            except Exception:
-                pass
+            app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {'pool_pre_ping': True, 'pool_recycle': 300, 'connect_args': {}}
+            try: db.engine.dispose()
+            except: pass
     return _sqlite_url if _using_sqlite else _postgres_url
 
 # ── Initialisation DB au démarrage ──
-_startup_pg = _test_postgres()
-_last_pg_check = _time.time()
-if _startup_pg:
-    _using_sqlite = False
+if _force_postgres:
+    # Railway : PostgreSQL direct, pas de test préalable
+    _using_sqlite   = False
     _initial_db_url = _postgres_url
-    print('[DB] PostgreSQL Railway connecté ✓')
+    print('[DB] Mode Railway — PostgreSQL ✓')
 else:
-    _using_sqlite = True
-    _initial_db_url = _sqlite_url
-    print('[DB] PostgreSQL injoignable au démarrage — mode SQLite local')
+    # Local : tester PostgreSQL, sinon SQLite
+    _last_pg_check = _time.time()
+    if _test_postgres():
+        _using_sqlite   = False
+        _initial_db_url = _postgres_url
+        print('[DB] PostgreSQL connecté ✓')
+    else:
+        _using_sqlite   = True
+        _initial_db_url = _sqlite_url
+        os.makedirs(os.path.dirname(_sqlite_path), exist_ok=True)
+        print('[DB] PostgreSQL injoignable — mode SQLite local')
 
 app.config['SQLALCHEMY_DATABASE_URI'] = _initial_db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -115,8 +116,8 @@ login_manager = LoginManager(app)
 
 @app.before_request
 def check_db_mode():
-    """Vérifie périodiquement si PostgreSQL est redevenu joignable."""
-    _get_db_url()
+    if not _force_postgres:  # seulement en local
+        _get_db_url()
 login_manager.login_view = 'login'
 
 # ─────────────────────────────────────────
