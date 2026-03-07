@@ -23,7 +23,7 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changez-moi-en-production-!@#$%')
 app.config['REMEMBER_COOKIE_DURATION'] = 60 * 60 * 24 * 30  # 30 jours
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SECURE'] = False
 
 # ── Chemins et URLs de base ──
 _sqlite_path    = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'financespro.db')
@@ -34,7 +34,7 @@ if _postgres_url.startswith('postgres://'):
 
 import time as _time
 _last_pg_check  = 0       # timestamp du dernier test PostgreSQL
-_pg_check_ttl   = 5      # re-tester toutes les 5 secondes
+_pg_check_ttl   = 30      # re-tester toutes les 30 secondes
 _using_sqlite   = True    # état courant (commence en SQLite jusqu'au premier test)
 
 def _test_postgres():
@@ -89,19 +89,6 @@ def _get_db_url():
             except Exception:
                 pass
     return _sqlite_url if _using_sqlite else _postgres_url
-
-def force_sync_database():
-    """
-    Force immédiatement le test PostgreSQL pour éviter
-    l'affichage de données SQLite obsolètes au login
-    """
-    global _last_pg_check
-
-    # forcer le test maintenant
-    _last_pg_check = 0
-
-    # déclencher la logique de bascule
-    _get_db_url()
 
 # ── Initialisation DB au démarrage ──
 _startup_pg = _test_postgres()
@@ -278,7 +265,6 @@ def login():
         user = User.query.filter_by(username=data.get('username')).first()
         if user and check_password_hash(user.password, data.get('password','')):
             login_user(user, remember=True)
-            force_sync_database()
             if request.is_json:
                 return jsonify({'ok': True, 'role': user.role})
             return redirect(url_for('index'))
