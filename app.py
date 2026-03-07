@@ -576,9 +576,16 @@ def api_me():
         'profile_pic': current_user.profile_pic or '',
     })
 
-@app.route('/api/me', methods=['PUT'])
+@app.route('/api/me', methods=['PUT', 'DELETE'])
 @login_required
 def api_me_update():
+    if request.method == 'DELETE':
+        # Supprimer toutes les données liées (cascade) + le compte
+        user = current_user._get_current_object()
+        logout_user()
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({'ok': True})
     data = request.get_json()
     # Vérification mot de passe actuel si changement demandé
     if data.get('new_password'):
