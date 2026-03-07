@@ -22,16 +22,40 @@ except ImportError:
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changez-moi-en-production-!@#$%')
 
-# Railway fournit DATABASE_URL avec "postgres://" — SQLAlchemy exige "postgresql://"
+# ── Détection automatique de la base de données ──
+# Si DATABASE_URL pointe vers PostgreSQL, on teste la connexion.
+# Si PostgreSQL est injoignable (pas internet), on bascule sur SQLite local.
 _db_url = os.environ.get('DATABASE_URL', 'sqlite:///financespro.db')
 if _db_url.startswith('postgres://'):
     _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+
+_using_postgres = _db_url.startswith('postgresql://')
+_using_sqlite   = False
+
+if _using_postgres:
+    try:
+        import psycopg2
+        from urllib.parse import urlparse
+        _p = urlparse(_db_url)
+        _conn = psycopg2.connect(
+            host=_p.hostname, port=_p.port or 5432,
+            user=_p.username, password=_p.password,
+            dbname=_p.path.lstrip('/'),
+            connect_timeout=3
+        )
+        _conn.close()
+        print('[DB] PostgreSQL Railway connecté ✓')
+    except Exception as _e:
+        print(f'[DB] PostgreSQL injoignable ({_e}) — bascule sur SQLite local')
+        _db_url     = 'sqlite:///financespro.db'
+        _using_sqlite = True
+
 app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,       # vérifie la connexion avant chaque requête
-    'pool_recycle': 300,         # recycle les connexions toutes les 5 min
-    'connect_args': {} if 'sqlite' in _db_url else {'connect_timeout': 10},
+    'pool_pre_ping': True,
+    'pool_recycle':  300,
+    'connect_args':  {} if 'sqlite' in _db_url else {'connect_timeout': 10},
 }
 
 db = SQLAlchemy(app)
@@ -196,24 +220,22 @@ def logout():
 
 @app.route('/api/register', methods=['POST'])
 def register():
-    # Seul l'admin peut créer des comptes (ou si 0 utilisateurs)
+    # Chaque personne peut créer son propre compte admin librement
     data = request.get_json()
-    if User.query.count() > 0:
-        if not current_user.is_authenticated or current_user.role != 'admin':
-            return jsonify({'ok': False, 'error': 'Non autorisé'}), 403
+    if not data.get('username') or not data.get('password'):
+        return jsonify({'ok': False, 'error': 'Nom d\'utilisateur et mot de passe requis'}), 400
     if User.query.filter_by(username=data.get('username')).first():
         return jsonify({'ok': False, 'error': 'Nom d\'utilisateur déjà pris'}), 400
-    role = 'admin' if User.query.count() == 0 else data.get('role', 'viewer')
     user = User(
         username=data.get('username'),
         email=data.get('email',''),
         password=generate_password_hash(data.get('password','')),
-        role=role
+        role='admin'  # tout nouveau compte est admin de ses propres données
     )
     db.session.add(user)
     db.session.commit()
     init_user_defaults(user)
-    return jsonify({'ok': True, 'id': user.id, 'role': role})
+    return jsonify({'ok': True, 'id': user.id, 'role': 'admin'})
 
 # ─────────────────────────────────────────
 # PAGES
