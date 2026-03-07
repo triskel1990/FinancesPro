@@ -156,14 +156,14 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
 <button class="hamburger" onclick="toggleSidebar()">☰</button>
 
 <!-- Overlay de chargement -->
-<div id="loading-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">
-  <div style="font-family:'DM Serif Display',serif;font-size:32px;letter-spacing:-1px">Finances<span style='color:var(--gold)'>Pro</span></div>
-  <div style="display:flex;gap:8px;align-items:center">
-    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:loadDot 1.2s ease-in-out infinite"></div>
-    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:loadDot 1.2s ease-in-out 0.2s infinite"></div>
-    <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);animation:loadDot 1.2s ease-in-out 0.4s infinite"></div>
+<div id="loading-overlay" style="position:fixed;inset:0;background:#0d1117;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">
+  <div style="font-size:32px;letter-spacing:-1px;font-weight:700;color:#e8eaf6">Finances<span style='color:#f4c55a'>Pro</span></div>
+  <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+    <div style="width:8px;height:8px;border-radius:50%;background:#638cff;animation:loadDot 1.2s ease-in-out infinite"></div>
+    <div style="width:8px;height:8px;border-radius:50%;background:#638cff;animation:loadDot 1.2s ease-in-out 0.2s infinite"></div>
+    <div style="width:8px;height:8px;border-radius:50%;background:#638cff;animation:loadDot 1.2s ease-in-out 0.4s infinite"></div>
   </div>
-  <div id="loading-msg" style="font-size:13px;color:var(--text3)">Chargement en cours…</div>
+  <div id="loading-msg" style="font-size:13px;color:#5a6e94">Chargement en cours…</div>
 </div>
 
 <div class="app">
