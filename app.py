@@ -25,14 +25,10 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changez-moi-en-producti
 # ── Détection automatique de la base de données ──
 # Si DATABASE_URL pointe vers PostgreSQL, on teste la connexion.
 # Si PostgreSQL est injoignable (pas internet), on bascule sur SQLite local.
-<<<<<<< Updated upstream
-_db_url = os.environ.get('DATABASE_URL', 'sqlite:///financespro.db')
-=======
 _sqlite_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'financespro.db')
 _sqlite_url  = 'sqlite:///' + _sqlite_path
 
 _db_url = os.environ.get('DATABASE_URL') or _sqlite_url
->>>>>>> Stashed changes
 if _db_url.startswith('postgres://'):
     _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
 
@@ -54,11 +50,7 @@ if _using_postgres:
         print('[DB] PostgreSQL Railway connecté ✓')
     except Exception as _e:
         print(f'[DB] PostgreSQL injoignable ({_e}) — bascule sur SQLite local')
-        Updated upstream
-        _db_url     = 'sqlite:///financespro.db'
-
         _db_url       = _sqlite_url
-        Stashed changes
         _using_sqlite = True
 
 app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
