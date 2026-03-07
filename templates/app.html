@@ -144,6 +144,10 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
 .stat-month-card{background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:16px;}
 .notif{position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border2);border-radius:12px;padding:14px 18px;font-size:13.5px;color:var(--text);z-index:9999;animation:slideIn 0.3s ease;display:flex;align-items:center;gap:10px;box-shadow:var(--shadow);max-width:360px;}
 @keyframes slideIn{from{opacity:0;transform:translateX(30px);}}
+.loader {
+  animation: pulse 1.2s infinite;
+  color: var(--text3);
+}
 ::-webkit-scrollbar{width:6px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px;}
@@ -212,10 +216,10 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
     </div>
   </div>
   <div class="cards-row cards-4">
-    <div class="kpi-card income"><div class="kpi-icon">💰</div><div class="kpi-label">Total Revenus</div><div class="kpi-value c-green" id="kpi-income">0 FC</div><div class="kpi-sub" id="kpi-income-usd">≈ $0</div></div>
-    <div class="kpi-card expense"><div class="kpi-icon">💸</div><div class="kpi-label">Total Dépenses</div><div class="kpi-value c-red" id="kpi-expense">0 FC</div><div class="kpi-sub" id="kpi-expense-pct">0% du revenu</div></div>
-    <div class="kpi-card savings"><div class="kpi-icon">💎</div><div class="kpi-label">Épargne</div><div class="kpi-value c-gold" id="kpi-savings">0 FC</div><div class="kpi-sub" id="kpi-savings-usd">≈ $0</div></div>
-    <div class="kpi-card balance"><div class="kpi-icon">⚖️</div><div class="kpi-label">Solde Net</div><div class="kpi-value c-blue" id="kpi-balance">0 FC</div><div class="kpi-sub" id="kpi-balance-sub">Après dépenses</div></div>
+    <div class="kpi-card income"><div class="kpi-icon">💰</div><div class="kpi-label">Total Revenus</div><div class="kpi-value c-green" id="kpi-income">Chargement...</div><div class="kpi-sub" id="kpi-income-usd">≈ $0</div></div>
+    <div class="kpi-card expense"><div class="kpi-icon">💸</div><div class="kpi-label">Total Dépenses</div><div class="kpi-value c-red" id="kpi-expense">Chargement...</div><div class="kpi-sub" id="kpi-expense-pct">0% du revenu</div></div>
+    <div class="kpi-card savings"><div class="kpi-icon">💎</div><div class="kpi-label">Épargne</div><div class="kpi-value c-gold" id="kpi-savings">Chargement...</div><div class="kpi-sub" id="kpi-savings-usd">≈ $0</div></div>
+    <div class="kpi-card balance"><div class="kpi-icon">⚖️</div><div class="kpi-label">Solde Net</div><div class="kpi-value c-blue" id="kpi-balance">Chargement...</div><div class="kpi-sub" id="kpi-balance-sub">Après dépenses</div></div>
   </div>
   <div class="cards-row cards-2">
     <div class="section"><div class="section-header"><div class="section-title"><span class="dot"></span> Répartition Revenus</div></div><div class="chart-container"><canvas id="chart-income-pie"></canvas></div></div>
@@ -704,8 +708,14 @@ window.addEventListener('offline', checkOnline);
 // ══════════════════════════════════════════
 async function init() {
   const now = new Date();
+
   document.getElementById('dash-month').value = now.getMonth();
   document.getElementById('dash-year').value = now.getFullYear();
+
+  await doSync(true);
+  
+  showPage('dashboard');
+}
 
   // Load user info
   const me = await api('GET', '/api/me');
