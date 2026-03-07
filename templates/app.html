@@ -1413,11 +1413,13 @@ function uploadProfilePic(input) {
 async function deleteAccount() {
   const confirm1 = confirm('⚠️ ATTENTION — Action irréversible !\n\nVous êtes sur le point de supprimer définitivement votre compte et TOUTES vos données.\n\nContinuer ?');
   if (!confirm1) return;
+  
   const confirm2 = prompt("Pour confirmer, tapez votre nom d'utilisateur :");
   if (!confirm2 || confirm2.trim() !== STATE.user?.username) {
     notify('Suppression annulée — nom incorrect', 'var(--orange)');
     return;
   }
+
   const res = await api('DELETE', '/api/me');
   if (res && res.ok) {
     // Effacer tout le localStorage
@@ -1473,24 +1475,6 @@ async function saveProfile() {
   } else {
     msg.textContent = '❌ ' + (res?.error || 'Erreur lors de la mise à jour.');
     msg.style.cssText = 'display:block;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);color:var(--red);border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px';
-  }
-}
-
-async function deleteAccount() {
-  const pass = document.getElementById('delete-account-pass').value;
-  if (!pass) { notify('Entrez votre mot de passe pour confirmer.', 'var(--red)'); return; }
-  if (!confirm('⚠️ ATTENTION — Action irréversible !\n\nToutes vos données seront supprimées définitivement :\n• Revenus et dépenses\n• Historique complet\n• Dettes\n• Catégories\n• Votre compte\n\nVous serez redirigé vers la page de création de compte.\n\nContinuer ?')) return;
-
-  const res = await api('DELETE', '/api/me', { password: pass });
-  if (res && res.ok) {
-    // Effacer tout le localStorage
-    const keys = Object.keys(localStorage).filter(k => k.startsWith('fp_'));
-    keys.forEach(k => localStorage.removeItem(k));
-    notify('Compte supprimé. Redirection…', 'var(--red)');
-    setTimeout(() => { window.location.href = '/login'; }, 1500);
-  } else {
-    notify('❌ ' + (res?.error || 'Mot de passe incorrect ou erreur serveur.'), 'var(--red)');
-    document.getElementById('delete-account-pass').value = '';
   }
 }
 
