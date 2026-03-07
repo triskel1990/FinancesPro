@@ -21,6 +21,9 @@ except ImportError:
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changez-moi-en-production-!@#$%')
+app.config['REMEMBER_COOKIE_DURATION'] = 60 * 60 * 24 * 30  # 30 jours
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False
 
 # ── Chemins et URLs de base ──
 _sqlite_path    = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'financespro.db')
@@ -192,7 +195,10 @@ class SyncLog(db.Model):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    try:
+        return User.query.get(int(user_id))
+    except Exception:
+        return None
 
 # ─────────────────────────────────────────
 # DONNÉES PAR DÉFAUT

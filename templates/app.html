@@ -643,11 +643,7 @@ function checkOnline() {
   if (STATE.online) {
     setSyncStatus('online', 'En ligne');
     // Supprimer la bannière hors-ligne si elle existe
-    const banner = document.getElementById('offline-banner');
-    if (banner) {
-      banner.remove();
-      document.querySelector('.main').style.marginTop = '';
-    }
+    hideOfflineBanner();
     if (!wasOnline) {
       notify('Connexion rétablie — synchronisation…', 'var(--green)');
       setTimeout(() => doSync(true), 1000);
@@ -662,8 +658,7 @@ setInterval(() => {
   const wasOnline = STATE.online;
   STATE.online = navigator.onLine;
   if (STATE.online && !wasOnline) {
-    const banner = document.getElementById('offline-banner');
-    if (banner) { banner.remove(); document.querySelector('.main').style.marginTop = ''; }
+    hideOfflineBanner();
     notify('Connexion rétablie — synchronisation…', 'var(--green)');
     setSyncStatus('online', 'En ligne');
     setTimeout(() => doSync(true), 1000);
@@ -678,11 +673,9 @@ setInterval(async () => {
   try {
     const mode = await api('GET', '/api/mode');
     if (!mode) return;
-    const banner = document.getElementById('offline-banner');
-    if (!mode.offline && banner) {
+    if (!mode.offline && document.getElementById('offline-banner')) {
       // Serveur repassé en PostgreSQL → supprimer bannière + sync
-      banner.remove();
-      document.querySelector('.main').style.marginTop = '';
+      hideOfflineBanner();
       setSyncStatus('online', 'En ligne');
       notify('Connexion Railway rétablie — synchronisation…', 'var(--green)');
       await doSync(true);
@@ -696,12 +689,7 @@ setInterval(async () => {
       }
     } else if (mode.offline && !banner) {
       // Serveur repassé en SQLite → afficher bannière
-      const b = document.createElement('div');
-      b.id = 'offline-banner';
-      b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,var(--orange),#e67e22);color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:600;';
-      b.innerHTML = '⚠️ Mode hors ligne — données locales uniquement. Reconnectez internet pour synchroniser avec Railway.';
-      document.body.prepend(b);
-      document.querySelector('.main').style.marginTop = '40px';
+      showOfflineBanner();
     }
   } catch(e) {}
 }, 15000);
@@ -756,13 +744,7 @@ async function init() {
     const mode = await api('GET', '/api/mode');
     if (mode && mode.offline) {
       setSyncStatus('', 'Mode hors ligne — SQLite local');
-      // Bannière d'avertissement
-      const banner = document.createElement('div');
-      banner.id = 'offline-banner';
-      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,var(--orange),#e67e22);color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:600;';
-      banner.innerHTML = '⚠️ Mode hors ligne — données locales uniquement. Reconnectez internet pour synchroniser avec Railway.';
-      document.body.prepend(banner);
-      document.querySelector('.main').style.marginTop = '40px';
+      showOfflineBanner();
     }
   } catch(e) {}
 
@@ -772,6 +754,22 @@ async function init() {
 }
 
 function logout() { window.location.href = '/logout'; }
+
+// ── Bannière offline ──
+function showOfflineBanner() {
+  if (document.getElementById('offline-banner')) return; // déjà présente
+  const b = document.createElement('div');
+  b.id = 'offline-banner';
+  b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,var(--orange),#e67e22);color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:600;';
+  b.innerHTML = '⚠️ Mode hors ligne — données locales uniquement. Reconnectez internet pour synchroniser avec Railway.';
+  document.body.prepend(b);
+  document.querySelector('.main').style.marginTop = '40px';
+}
+
+function hideOfflineBanner() {
+  const b = document.getElementById('offline-banner');
+  if (b) { b.remove(); document.querySelector('.main').style.marginTop = ''; }
+}
 
 // ══════════════════════════════════════════
 // NAVIGATION
