@@ -636,8 +636,7 @@ async function doSync(silent=false) {
     LS.set('lastSync', STATE.lastSync);
     setSyncStatus('online', 'Synchronisé · ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
     if (!silent) notify('Synchronisation réussie ✓', 'var(--green)');
-    refreshAll();
-    // Recharger la photo de profil depuis le serveur
+    // Recharger photo de profil + données manquantes depuis le serveur
     const me = await api('GET', '/api/me');
     if (me && me.profile_pic) {
       if (STATE.user) STATE.user.profile_pic = me.profile_pic;
@@ -645,6 +644,20 @@ async function doSync(silent=false) {
       const ua = document.getElementById('ua-avatar');
       if (ua) ua.innerHTML = `<img src="${me.profile_pic}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
     }
+    // Recharger les mois depuis le serveur pour avoir les vraies données
+    const moisList = await api('GET', '/api/mois');
+    if (moisList && moisList.length) {
+      const moisData = await Promise.all(moisList.map(m => api('GET', '/api/mois/' + m.mois_key)));
+      moisData.forEach((md, i) => {
+        if (!md || !moisList[i]) return;
+        const key = moisList[i].mois_key;
+        const localTs = STATE.mois[key]?.updated_at || '';
+        const serverTs = md.updated_at || '';
+        if (!STATE.mois[key] || (serverTs && serverTs > localTs)) STATE.mois[key] = md;
+      });
+      LS.set('mois', STATE.mois);
+    }
+    refreshAll();
   } else {
     setSyncStatus('online', 'Erreur de sync');
     if (!silent) notify('Erreur de synchronisation', 'var(--red)');
@@ -761,17 +774,36 @@ async function init() {
   }
 
   // Load server data to local
-  const [cats, revs, deps, dets] = await Promise.all([
+  document.getElementById('loading-msg').textContent = 'Chargement des données…';
+  const [cats, revs, deps, dets, moisList] = await Promise.all([
     api('GET', '/api/categories'),
     api('GET', '/api/revenus'),
     api('GET', '/api/depenses-templates'),
     api('GET', '/api/dettes'),
+    api('GET', '/api/mois'),  // liste des mois disponibles sur le serveur
   ]);
   if (cats && cats.length) { STATE.categories = cats; LS.set('categories', cats); }
   if (revs && revs.length) { STATE.revenus_templates = revs; LS.set('revenus_templates', revs); }
   if (deps && deps.length) LS.set('depenses_templates', deps);
-  // Ne remplacer les dettes locales que si le serveur en retourne vraiment
   if (dets && dets.length) { STATE.dettes = dets; LS.set('dettes', dets); }
+
+  // Charger les données mensuelles depuis le serveur (manquantes en localStorage sur Railway)
+  if (moisList && moisList.length) {
+    document.getElementById('loading-msg').textContent = 'Chargement de l'historique…';
+    const moisPromises = moisList.map(m => api('GET', '/api/mois/' + m.mois_key));
+    const moisData = await Promise.all(moisPromises);
+    moisData.forEach((md, i) => {
+      if (!md || !moisList[i]) return;
+      const key = moisList[i].mois_key;
+      const localTs = STATE.mois[key]?.updated_at || '';
+      const serverTs = md.updated_at || '';
+      // Serveur gagne si timestamp plus récent ou si pas de données locales
+      if (!STATE.mois[key] || (serverTs && serverTs > localTs)) {
+        STATE.mois[key] = md;
+      }
+    });
+    LS.set('mois', STATE.mois);
+  }
 
   updateTauxDisplay();
   checkOnline();
