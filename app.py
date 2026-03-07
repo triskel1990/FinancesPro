@@ -25,7 +25,14 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changez-moi-en-producti
 # ── Détection automatique de la base de données ──
 # Si DATABASE_URL pointe vers PostgreSQL, on teste la connexion.
 # Si PostgreSQL est injoignable (pas internet), on bascule sur SQLite local.
+<<<<<<< Updated upstream
 _db_url = os.environ.get('DATABASE_URL', 'sqlite:///financespro.db')
+=======
+_sqlite_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance', 'financespro.db')
+_sqlite_url  = 'sqlite:///' + _sqlite_path
+
+_db_url = os.environ.get('DATABASE_URL') or _sqlite_url
+>>>>>>> Stashed changes
 if _db_url.startswith('postgres://'):
     _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
 
@@ -47,7 +54,11 @@ if _using_postgres:
         print('[DB] PostgreSQL Railway connecté ✓')
     except Exception as _e:
         print(f'[DB] PostgreSQL injoignable ({_e}) — bascule sur SQLite local')
+        Updated upstream
         _db_url     = 'sqlite:///financespro.db'
+
+        _db_url       = _sqlite_url
+        Stashed changes
         _using_sqlite = True
 
 app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
@@ -350,7 +361,6 @@ def api_mois(mois_key):
     if request.method == 'PUT':
         data = request.get_json()
         if entree:
-            # Garder la version la plus récente (offline-first : timestamp gagne)
             existing = json.loads(entree.data_json)
             incoming_ts = data.get('updated_at', '')
             existing_ts = existing.get('updated_at', '')
@@ -364,7 +374,6 @@ def api_mois(mois_key):
         return jsonify({'ok': True, 'updated_at': entree.updated_at.isoformat()})
     if entree:
         return jsonify(json.loads(entree.data_json))
-    # Générer données vides à partir des templates
     revs = Revenu.query.filter_by(user_id=current_user.id).all()
     deps = DepenseTemplate.query.filter_by(user_id=current_user.id).all()
     default = {
@@ -426,11 +435,9 @@ def api_sync():
     payload = request.get_json()
     merged = {'mois': {}, 'dettes': [], 'taux': current_user.taux}
 
-    # Sync taux
     if payload.get('taux'):
         current_user.taux = payload['taux']
 
-    # Sync mois
     for mois_key, mois_data in payload.get('mois', {}).items():
         entree = EntreeMensuelle.query.filter_by(user_id=current_user.id, mois_key=mois_key).first()
         incoming_ts = mois_data.get('updated_at','')
@@ -446,13 +453,11 @@ def api_sync():
             db.session.add(entree)
             merged['mois'][mois_key] = mois_data
 
-    # Retourner aussi les mois serveur non présents localement
     all_entries = EntreeMensuelle.query.filter_by(user_id=current_user.id).all()
     for e in all_entries:
         if e.mois_key not in merged['mois']:
             merged['mois'][e.mois_key] = json.loads(e.data_json)
 
-    # Sync dettes
     for d_data in payload.get('dettes', []):
         dette = Dette.query.filter_by(id=d_data.get('id'), user_id=current_user.id).first()
         incoming_ts = d_data.get('updated_at','')
@@ -530,7 +535,6 @@ def api_profile_pic():
         return jsonify({'ok': True})
     data = request.get_json()
     pic = data.get('profile_pic', '')
-    # Limiter à ~2 Mo (base64 ~2.7MB pour 2MB image)
     if len(pic) > 3_000_000:
         return jsonify({'ok': False, 'error': 'Image trop grande (max 2 Mo)'}), 400
     current_user.profile_pic = pic
@@ -538,11 +542,32 @@ def api_profile_pic():
     return jsonify({'ok': True})
 
 # ─────────────────────────────────────────
+# API — MODE (online/offline)
+# ─────────────────────────────────────────
+
+@app.route('/api/mode')
+def api_mode():
+    """Indique au frontend quel mode la base utilise."""
+    return jsonify({
+        'mode': 'sqlite' if _using_sqlite else 'postgresql',
+        'offline': _using_sqlite
+    })
+
+# ─────────────────────────────────────────
 # INIT DB
 # ─────────────────────────────────────────
 
 with app.app_context():
     db.create_all()
+    if _using_sqlite:
+        count = User.query.count()
+        if count == 0:
+            print('[DB] Mode offline — aucun compte local trouvé.')
+            print('[DB] Créez un compte sur http://localhost:5000 ou reconnectez internet.')
+        else:
+            print(f'[DB] Mode offline — {count} compte(s) local/locaux trouvé(s) ✓')
 
 if __name__ == '__main__':
+    mode = 'OFFLINE (SQLite local)' if _using_sqlite else 'ONLINE (PostgreSQL Railway)'
+    print(f'[FinancesPro] Démarrage en mode {mode}')
     app.run(debug=True, host='0.0.0.0', port=5000)
