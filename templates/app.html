@@ -713,9 +713,6 @@ async function init() {
   document.getElementById('dash-year').value = now.getFullYear();
 
   await doSync(true);
-  
-  showPage('dashboard');
-}
 
   // Load user info
   const me = await api('GET', '/api/me');
