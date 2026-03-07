@@ -616,6 +616,14 @@ async function doSync(silent=false) {
     setSyncStatus('online', 'Synchronisé · ' + new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}));
     if (!silent) notify('Synchronisation réussie ✓', 'var(--green)');
     refreshAll();
+    // Recharger la photo de profil depuis le serveur
+    const me = await api('GET', '/api/me');
+    if (me && me.profile_pic) {
+      if (STATE.user) STATE.user.profile_pic = me.profile_pic;
+      LS.set('profile_pic_' + me.id, me.profile_pic);
+      const ua = document.getElementById('ua-avatar');
+      if (ua) ua.innerHTML = `<img src="${me.profile_pic}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
+    }
   } else {
     setSyncStatus('online', 'Erreur de sync');
     if (!silent) notify('Erreur de synchronisation', 'var(--red)');
@@ -634,14 +642,36 @@ function checkOnline() {
   STATE.online = navigator.onLine;
   if (STATE.online) {
     setSyncStatus('online', 'En ligne');
+    // Supprimer la bannière hors-ligne si elle existe
+    const banner = document.getElementById('offline-banner');
+    if (banner) {
+      banner.remove();
+      document.querySelector('.main').style.marginTop = '';
+    }
     if (!wasOnline) {
       notify('Connexion rétablie — synchronisation…', 'var(--green)');
       setTimeout(() => doSync(true), 1000);
     }
   } else {
-    setSyncStatus('', 'Hors ligne — mode local');
+    setSyncStatus('', 'Hors ligne — données locales');
   }
 }
+
+// Vérification toutes les 30 secondes — détecte le retour internet
+setInterval(() => {
+  const wasOnline = STATE.online;
+  STATE.online = navigator.onLine;
+  if (STATE.online && !wasOnline) {
+    const banner = document.getElementById('offline-banner');
+    if (banner) { banner.remove(); document.querySelector('.main').style.marginTop = ''; }
+    notify('Connexion rétablie — synchronisation…', 'var(--green)');
+    setSyncStatus('online', 'En ligne');
+    setTimeout(() => doSync(true), 1000);
+  } else if (!STATE.online && wasOnline) {
+    setSyncStatus('', 'Hors ligne — données locales');
+    notify('Connexion perdue — mode hors ligne', 'var(--orange)');
+  }
+}, 30000);
 
 window.addEventListener('online', checkOnline);
 window.addEventListener('offline', checkOnline);
@@ -687,6 +717,22 @@ async function init() {
 
   updateTauxDisplay();
   checkOnline();
+
+  // Vérifier si le serveur est en mode offline (SQLite)
+  try {
+    const mode = await api('GET', '/api/mode');
+    if (mode && mode.offline) {
+      setSyncStatus('', 'Mode hors ligne — SQLite local');
+      // Bannière d'avertissement
+      const banner = document.createElement('div');
+      banner.id = 'offline-banner';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,var(--orange),#e67e22);color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:600;';
+      banner.innerHTML = '⚠️ Mode hors ligne — données locales uniquement. Reconnectez internet pour synchroniser avec Railway.';
+      document.body.prepend(banner);
+      document.querySelector('.main').style.marginTop = '40px';
+    }
+  } catch(e) {}
+
   showPage('dashboard');
   // Vérifier les paiements automatiques au démarrage
   setTimeout(checkAutopayments, 1500);

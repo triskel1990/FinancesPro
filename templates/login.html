@@ -122,8 +122,27 @@ async function doRegister() {
     body: JSON.stringify({username, email, password})
   });
   const data = await res.json();
-  if (data.ok) { toggleCard(); document.getElementById('login-user').value = username; }
-  else { err.textContent = data.error || 'Erreur lors de la création'; err.style.display = 'block'; }
+  if (data.ok) {
+    // Connexion automatique après création du compte
+    const loginRes = await fetch('/login', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username, password})
+    });
+    const loginData = await loginRes.json();
+    if (loginData.ok) {
+      window.location.href = '/';
+    } else {
+      // Fallback : basculer vers le formulaire de connexion avec message de succès
+      toggleCard();
+      document.getElementById('login-user').value = username;
+      const errLogin = document.getElementById('err-login');
+      errLogin.textContent = '✓ Compte créé avec succès ! Connectez-vous.';
+      errLogin.style.cssText = 'display:block;background:rgba(52,217,135,0.1);border:1px solid rgba(52,217,135,0.3);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--green);margin-bottom:16px';
+    }
+  } else {
+    err.textContent = data.error || 'Erreur lors de la création';
+    err.style.display = 'block';
+  }
 }
 
 // Enter key
