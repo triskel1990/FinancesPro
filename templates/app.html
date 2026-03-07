@@ -324,12 +324,30 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
         <div>
           <div style="font-weight:600;font-size:15px" id="profile-username-display">—</div>
           <div style="font-size:12px;color:var(--text3);margin-top:2px" id="profile-role-display">—</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px" id="profile-email-display">—</div>
           <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="document.getElementById('profile-pic-input').click()">📷 Changer la photo</button>
           <button class="btn btn-danger btn-sm" style="margin-top:4px" onclick="removeProfilePic()" id="btn-remove-pic">🗑️ Supprimer</button>
         </div>
       </div>
       <input type="file" id="profile-pic-input" accept="image/*" style="display:none" onchange="uploadProfilePic(this)">
-      <div style="font-size:11px;color:var(--text3)">La photo est stockée localement sur cet appareil.</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:16px">La photo est stockée localement sur cet appareil.</div>
+
+      <!-- Modifier profil -->
+      <div style="border-top:1px solid var(--border);padding-top:16px">
+        <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Modifier le profil</div>
+        <div class="form-group"><label class="form-label">Nom d'utilisateur</label><input type="text" class="form-input" id="edit-username" placeholder="Nouveau nom"></div>
+        <div class="form-group"><label class="form-label">Adresse email</label><input type="email" class="form-input" id="edit-email" placeholder="email@exemple.com"></div>
+        <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+          <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Changer le mot de passe</div>
+          <div class="form-group"><label class="form-label">Mot de passe actuel</label><input type="password" class="form-input" id="edit-pass-current" placeholder="••••••••"></div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label">Nouveau mot de passe</label><input type="password" class="form-input" id="edit-pass-new" placeholder="••••••••"></div>
+            <div class="form-group"><label class="form-label">Confirmer</label><input type="password" class="form-input" id="edit-pass-confirm" placeholder="••••••••"></div>
+          </div>
+        </div>
+        <div id="edit-profile-msg" style="display:none;font-size:12px;padding:8px 12px;border-radius:8px;margin-bottom:10px"></div>
+        <button class="btn btn-primary" onclick="saveProfile()">💾 Enregistrer les modifications</button>
+      </div>
     </div>
 
     <!-- Taux de change -->
@@ -389,14 +407,19 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
 </div>
 
 <div class="modal-overlay" id="modal-revenu">
-  <div class="modal">
+  <div class="modal" style="width:520px">
     <div class="modal-title">💰 Nouveau revenu</div>
     <div class="form-group"><label class="form-label">Nom</label><input type="text" class="form-input" id="m-rev-name" placeholder="Ex: Salaire DGM"></div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Montant (FC)</label><input type="number" class="form-input" id="m-rev-amount" placeholder="0"></div>
-      <div class="form-group"><label class="form-label">Icône</label><input type="text" class="form-input" id="m-rev-icon" placeholder="💰" maxlength="4"></div>
-    </div>
+    <div class="form-group"><label class="form-label">Montant (FC)</label><input type="number" class="form-input" id="m-rev-amount" placeholder="0"></div>
     <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="m-rev-type"><option value="salaire">Salaire</option><option value="prime">Prime</option><option value="benefice">Bénéfice / Business</option><option value="frais">Frais de fonctionnement</option><option value="autre">Autre</option></select></div>
+    <div class="form-group">
+      <label class="form-label">Icône</label>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div id="m-rev-icon-preview" style="font-size:28px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:var(--bg3);border:2px solid var(--gold);border-radius:10px">💰</div>
+        <input type="text" class="form-input" id="m-rev-icon" placeholder="Ou taper un emoji…" maxlength="4" style="flex:1" oninput="updateRevIconPreview(this.value)">
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:150px;overflow-y:auto;padding:4px" id="emoji-grid-rev"></div>
+    </div>
     <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal('modal-revenu')">Annuler</button><button class="btn btn-gold" onclick="saveRevenu()">Ajouter</button></div>
   </div>
 </div>
@@ -465,11 +488,16 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
 </div>
 
 <div class="modal-overlay" id="modal-cat">
-  <div class="modal">
+  <div class="modal" style="width:520px">
     <div class="modal-title">🏷️ Nouvelle catégorie</div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Nom</label><input type="text" class="form-input" id="m-cat-name" placeholder="Ex: Transport"></div>
-      <div class="form-group"><label class="form-label">Icône</label><input type="text" class="form-input" id="m-cat-icon" placeholder="🚗" maxlength="4"></div>
+    <div class="form-group"><label class="form-label">Nom</label><input type="text" class="form-input" id="m-cat-name" placeholder="Ex: Transport"></div>
+    <div class="form-group">
+      <label class="form-label">Icône</label>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <div id="m-cat-icon-preview" style="font-size:28px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:var(--bg3);border:2px solid var(--accent);border-radius:10px">📦</div>
+        <input type="text" class="form-input" id="m-cat-icon" placeholder="Ou taper un emoji…" maxlength="4" style="flex:1" oninput="updateCatIconPreview(this.value)">
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;max-height:180px;overflow-y:auto;padding:4px" id="emoji-grid-cat"></div>
     </div>
     <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal('modal-cat')">Annuler</button><button class="btn btn-primary" onclick="saveCat()">Ajouter</button></div>
   </div>
@@ -1299,7 +1327,11 @@ async function refreshSettings() {
   if (STATE.user) {
     document.getElementById('profile-username-display').textContent = STATE.user.username;
     document.getElementById('profile-role-display').textContent = STATE.user.role === 'admin' ? '👑 Administrateur' : '👁️ Lecteur';
+    document.getElementById('profile-email-display').textContent = STATE.user.email ? '✉️ ' + STATE.user.email : '✉️ Aucun email renseigné';
     document.getElementById('profile-avatar-letter').textContent = STATE.user.username[0].toUpperCase();
+    // Pré-remplir les champs de modification
+    document.getElementById('edit-username').value = STATE.user.username || '';
+    document.getElementById('edit-email').value    = STATE.user.email    || '';
     // Charger photo de profil si elle existe
     const pic = STATE.user.profile_pic || LS.get('profile_pic_' + STATE.user.id) || '';
     if (pic) {
@@ -1362,6 +1394,53 @@ function uploadProfilePic(input) {
     if (ua) ua.innerHTML = `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:50%">`;
   };
   reader.readAsDataURL(file);
+}
+
+async function saveProfile() {
+  const username = document.getElementById('edit-username').value.trim();
+  const email    = document.getElementById('edit-email').value.trim();
+  const passOld  = document.getElementById('edit-pass-current').value;
+  const passNew  = document.getElementById('edit-pass-new').value;
+  const passConf = document.getElementById('edit-pass-confirm').value;
+  const msg      = document.getElementById('edit-profile-msg');
+
+  // Validation mot de passe
+  if (passNew && passNew !== passConf) {
+    msg.textContent = '❌ Les nouveaux mots de passe ne correspondent pas.';
+    msg.style.cssText = 'display:block;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);color:var(--red);border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px';
+    return;
+  }
+  if (passNew && !passOld) {
+    msg.textContent = '❌ Entrez votre mot de passe actuel pour le changer.';
+    msg.style.cssText = 'display:block;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);color:var(--red);border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px';
+    return;
+  }
+
+  const payload = {};
+  if (username && username !== STATE.user?.username) payload.username = username;
+  if (email    && email    !== STATE.user?.email)    payload.email    = email;
+  if (passNew) { payload.current_password = passOld; payload.new_password = passNew; }
+
+  if (!Object.keys(payload).length) {
+    msg.textContent = 'Aucune modification détectée.';
+    msg.style.cssText = 'display:block;background:rgba(99,140,255,0.1);border:1px solid rgba(99,140,255,0.3);color:var(--accent);border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px';
+    return;
+  }
+
+  const res = await api('PUT', '/api/me', payload);
+  if (res && res.ok) {
+    if (payload.username) { STATE.user.username = payload.username; document.getElementById('ua-name').textContent = payload.username; }
+    if (payload.email)    STATE.user.email = payload.email;
+    msg.textContent = '✓ Profil mis à jour avec succès !';
+    msg.style.cssText = 'display:block;background:rgba(52,217,135,0.1);border:1px solid rgba(52,217,135,0.3);color:var(--green);border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px';
+    document.getElementById('edit-pass-current').value = '';
+    document.getElementById('edit-pass-new').value = '';
+    document.getElementById('edit-pass-confirm').value = '';
+    refreshSettings();
+  } else {
+    msg.textContent = '❌ ' + (res?.error || 'Erreur lors de la mise à jour.');
+    msg.style.cssText = 'display:block;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);color:var(--red);border-radius:8px;padding:8px 12px;font-size:12px;margin-bottom:10px';
+  }
 }
 
 function removeProfilePic() {
@@ -1474,7 +1553,7 @@ function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('open');}));
 
-function openRevenuModal() { document.getElementById('m-rev-name').value=''; document.getElementById('m-rev-amount').value=''; document.getElementById('m-rev-icon').value='💰'; openModal('modal-revenu'); }
+function openRevenuModal() { document.getElementById('m-rev-name').value=''; document.getElementById('m-rev-amount').value=''; document.getElementById('m-rev-icon').value='💰'; document.getElementById('m-rev-icon-preview').textContent='💰'; openModal('modal-revenu'); setTimeout(()=>buildEmojiGridRev('💰'),50); }
 
 async function saveRevenu() {
   const name=document.getElementById('m-rev-name').value.trim();
@@ -1520,6 +1599,40 @@ const EMOJI_LIST = [
   // Divers
   '📋','📦','🔧','🛠️','🧾','📝','⚙️','🗂️','🏷️',
 ];
+
+// ── Emoji picker Catégorie ──
+function buildEmojiGridCat(selected='📦') {
+  const grid = document.getElementById('emoji-grid-cat');
+  if (!grid) return;
+  grid.innerHTML = '';
+  EMOJI_LIST.forEach(emoji => {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.textContent = emoji;
+    btn.style.cssText = `font-size:20px;width:38px;height:38px;border-radius:8px;border:2px solid ${emoji===selected?'var(--accent)':'transparent'};background:${emoji===selected?'rgba(99,140,255,0.15)':'var(--bg3)'};cursor:pointer;transition:all 0.12s`;
+    btn.onclick = () => { document.getElementById('m-cat-icon').value = emoji; document.getElementById('m-cat-icon-preview').textContent = emoji; buildEmojiGridCat(emoji); };
+    grid.appendChild(btn);
+  });
+}
+function updateCatIconPreview(val) {
+  if (val) { document.getElementById('m-cat-icon-preview').textContent = val; buildEmojiGridCat(val); }
+}
+
+// ── Emoji picker Revenu ──
+function buildEmojiGridRev(selected='💰') {
+  const grid = document.getElementById('emoji-grid-rev');
+  if (!grid) return;
+  grid.innerHTML = '';
+  EMOJI_LIST.forEach(emoji => {
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.textContent = emoji;
+    btn.style.cssText = `font-size:20px;width:38px;height:38px;border-radius:8px;border:2px solid ${emoji===selected?'var(--gold)':'transparent'};background:${emoji===selected?'rgba(244,197,90,0.15)':'var(--bg3)'};cursor:pointer;transition:all 0.12s`;
+    btn.onclick = () => { document.getElementById('m-rev-icon').value = emoji; document.getElementById('m-rev-icon-preview').textContent = emoji; buildEmojiGridRev(emoji); };
+    grid.appendChild(btn);
+  });
+}
+function updateRevIconPreview(val) {
+  if (val) { document.getElementById('m-rev-icon-preview').textContent = val; buildEmojiGridRev(val); }
+}
 
 function buildEmojiGrid(selectedIcon='🏠') {
   const grid = document.getElementById('emoji-grid');
@@ -1652,7 +1765,7 @@ async function saveDette() {
   else notify('Dette enregistrée : '+name,'var(--red)');
 }
 
-function openCatModal() { document.getElementById('m-cat-name').value=''; document.getElementById('m-cat-icon').value=''; openModal('modal-cat'); }
+function openCatModal() { document.getElementById('m-cat-name').value=''; document.getElementById('m-cat-icon').value='📦'; document.getElementById('m-cat-icon-preview').textContent='📦'; openModal('modal-cat'); setTimeout(()=>buildEmojiGridCat('📦'),50); }
 async function saveCat() {
   const name=document.getElementById('m-cat-name').value.trim();
   const icon=document.getElementById('m-cat-icon').value||'📦';

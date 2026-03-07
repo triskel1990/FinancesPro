@@ -570,10 +570,30 @@ def api_me():
     return jsonify({
         'id':          current_user.id,
         'username':    current_user.username,
+        'email':       current_user.email or '',
         'role':        current_user.role,
         'taux':        current_user.taux,
         'profile_pic': current_user.profile_pic or '',
     })
+
+@app.route('/api/me', methods=['PUT'])
+@login_required
+def api_me_update():
+    data = request.get_json()
+    # Vérification mot de passe actuel si changement demandé
+    if data.get('new_password'):
+        if not check_password_hash(current_user.password, data.get('current_password', '')):
+            return jsonify({'ok': False, 'error': 'Mot de passe actuel incorrect'}), 400
+        current_user.password = generate_password_hash(data['new_password'])
+    if data.get('username'):
+        existing = User.query.filter_by(username=data['username']).first()
+        if existing and existing.id != current_user.id:
+            return jsonify({'ok': False, 'error': "Ce nom d'utilisateur est déjà pris"}), 400
+        current_user.username = data['username']
+    if 'email' in data:
+        current_user.email = data['email']
+    db.session.commit()
+    return jsonify({'ok': True, 'username': current_user.username, 'email': current_user.email})
 
 @app.route('/api/me/profile-pic', methods=['PUT', 'DELETE'])
 @login_required
