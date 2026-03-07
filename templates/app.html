@@ -1420,13 +1420,9 @@ function uploadProfilePic(input) {
 }
 
 async function deleteAccount() {
-  const confirm1 = confirm('⚠️ ATTENTION — Action irréversible !
-
-Vous êtes sur le point de supprimer définitivement votre compte et TOUTES vos données.
-
-Continuer ?');
+  const confirm1 = confirm('⚠️ ATTENTION — Action irréversible !\n\nVous êtes sur le point de supprimer définitivement votre compte et TOUTES vos données.\n\nContinuer ?');
   if (!confirm1) return;
-  const confirm2 = prompt('Pour confirmer, tapez votre nom d'utilisateur :');
+  const confirm2 = prompt("Pour confirmer, tapez votre nom d'utilisateur :");
   if (!confirm2 || confirm2.trim() !== STATE.user?.username) {
     notify('Suppression annulée — nom incorrect', 'var(--orange)');
     return;
