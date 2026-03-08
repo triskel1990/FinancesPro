@@ -403,6 +403,10 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
     <div style="background:rgba(255,107,107,0.05);border:1px solid rgba(255,107,107,0.2);border-radius:12px;padding:16px">
       <div style="font-size:13px;font-weight:600;color:var(--red);margin-bottom:6px">🗑️ Supprimer mon compte</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Supprime définitivement votre compte et toutes vos données (revenus, dépenses, dettes, historique). Cette action est <strong style="color:var(--red)">irréversible</strong>. Faites une sauvegarde avant.</div>
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group" style="margin:0"><label class="form-label">Nom d'utilisateur</label><input type="text" class="form-input" id="delete-account-username" placeholder="Votre nom d'utilisateur"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">Mot de passe</label><input type="password" class="form-input" id="delete-account-pass" placeholder="••••••••"></div>
+      </div>
       <button class="btn btn-danger" onclick="deleteAccount()">⚠️ Supprimer mon compte et toutes mes données</button>
     </div>
   </div>
@@ -1458,23 +1462,28 @@ async function saveProfile() {
 }
 
 async function deleteAccount() {
-  const confirm1 = confirm('⚠️ ATTENTION — Action irréversible !\n\nVous êtes sur le point de supprimer définitivement votre compte et TOUTES vos données.\n\nContinuer ?');
-  if (!confirm1) return;
-  
-  const confirm2 = prompt("Pour confirmer, tapez votre nom d'utilisateur :");
-  if (!confirm2 || confirm2.trim() !== STATE.user?.username) {
-    notify('Suppression annulée — nom incorrect', 'var(--orange)');
+  const usernameInput = document.getElementById('delete-account-username')?.value?.trim();
+  const passInput = document.getElementById('delete-account-pass')?.value;
+
+  if (!usernameInput || !passInput) {
+    notify('Veuillez remplir votre nom d\'utilisateur et mot de passe.', 'var(--orange)');
+    return;
+  }
+  if (usernameInput !== STATE.user?.username) {
+    notify('Nom d\'utilisateur incorrect.', 'var(--orange)');
     return;
   }
 
-  const res = await api('DELETE', '/api/me');
+  const confirmed = confirm('⚠️ ATTENTION — Action irréversible !\n\nToutes vos données seront supprimées définitivement.\n\nContinuer ?');
+  if (!confirmed) return;
+
+  const res = await api('DELETE', '/api/me', { password: passInput });
   if (res && res.ok) {
-    // Effacer tout le localStorage
     Object.keys(localStorage).filter(k => k.startsWith('fp_')).forEach(k => localStorage.removeItem(k));
     notify('Compte supprimé. Redirection…', 'var(--red)');
     setTimeout(() => { window.location.href = '/login'; }, 1500);
   } else {
-    notify('Erreur lors de la suppression : ' + (res?.error || ''), 'var(--red)');
+    notify('Erreur : ' + (res?.error || 'mot de passe incorrect'), 'var(--red)');
   }
 }
 

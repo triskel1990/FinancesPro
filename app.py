@@ -585,12 +585,14 @@ def api_me():
 def api_me_update():
     if request.method == 'DELETE':
         try:
+            data = request.get_json() or {}
+            password = data.get('password', '')
+            if not check_password_hash(current_user.password, password):
+                return jsonify({'ok': False, 'error': 'Mot de passe incorrect'}), 400
             user = current_user._get_current_object()
             uid = user.id
-            # Supprimer SyncLog manuellement (pas de cascade définie)
             SyncLog.query.filter_by(user_id=uid).delete()
             db.session.flush()
-            # Supprimer le compte (cascade supprime le reste)
             db.session.delete(user)
             db.session.commit()
             logout_user()
