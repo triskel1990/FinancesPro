@@ -584,12 +584,20 @@ def api_me():
 @login_required
 def api_me_update():
     if request.method == 'DELETE':
-        # Supprimer toutes les données liées (cascade) + le compte
-        user = current_user._get_current_object()
-        logout_user()
-        db.session.delete(user)
-        db.session.commit()
-        return jsonify({'ok': True})
+        try:
+            user = current_user._get_current_object()
+            uid = user.id
+            # Supprimer SyncLog manuellement (pas de cascade définie)
+            SyncLog.query.filter_by(user_id=uid).delete()
+            db.session.flush()
+            # Supprimer le compte (cascade supprime le reste)
+            db.session.delete(user)
+            db.session.commit()
+            logout_user()
+            return jsonify({'ok': True})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'ok': False, 'error': str(e)}), 500
     data = request.get_json()
     # Vérification mot de passe actuel si changement demandé
     if data.get('new_password'):
