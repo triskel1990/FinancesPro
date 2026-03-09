@@ -1324,7 +1324,7 @@ function refreshStats() {
   for(let i=6;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');labels.push(MONTHS[d.getMonth()].slice(0,3)+(i===0?' ★':''));const md=STATE.mois[k]||getMonthData(k);const rev=md?md.revenus.reduce((s,r)=>s+(parseFloat(r.amount)||0),0):0;const dep=md?md.depenses.filter(d=>d.cat_slug!=='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0):0;const sav=md?md.depenses.filter(d=>d.cat_slug==='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0):0;revData.push(rev);depData.push(dep);savData.push(sav);pctData.push(rev>0?Math.round(dep/rev*100):0);}
   const ctx1=document.getElementById('chart-vs');
   if(chartVs) chartVs.destroy();
-  chartVs=new Chart(ctx1,{type:'bar',data:{labels,datasets:[{label:'Revenus',data:revData,backgroundColor:'rgba(52,217,135,0.6)',borderColor:'var(--green)',borderWidth:2,borderRadius:6},{label:'Dépenses',data:depData,backgroundColor:'rgba(255,107,107,0.6)',borderColor:'var(--red)',borderWidth:2,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8fa3cc'}}},scales:{x:{ticks:{color:'#5a6e94'}},y:{ticks:{color:'#5a6e94',callback:v=>Math.round(v/1000)+'k'}}}}});
+  chartVs=new Chart(ctx1,{type:'bar',data:{labels,datasets:[{label:'Revenus',data:revData,backgroundColor:'rgba(52,217,135,0.7)',borderColor:'#34d987',borderWidth:2,borderRadius:6},{label:'Dépenses',data:depData,backgroundColor:'rgba(255,107,107,0.7)',borderColor:'#ff6b6b',borderWidth:2,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#c8d8f0',font:{size:12},padding:16,usePointStyle:true,pointStyle:'rect'}}},scales:{x:{ticks:{color:'#5a6e94'}},y:{ticks:{color:'#5a6e94',callback:v=>Math.round(v/1000)+'k'}}}}});
   const ctx2=document.getElementById('chart-savings');
   if(chartSavings) chartSavings.destroy();
   chartSavings=new Chart(ctx2,{type:'line',data:{labels,datasets:[{label:'Épargne',data:savData,borderColor:'var(--gold)',backgroundColor:'rgba(244,197,90,0.1)',fill:true,tension:0.4,pointBackgroundColor:'var(--gold)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8fa3cc'}}},scales:{x:{ticks:{color:'#5a6e94'}},y:{ticks:{color:'#5a6e94',callback:v=>Math.round(v/1000)+'k'}}}}});
@@ -1352,8 +1352,10 @@ function refreshStats() {
     const md=STATE.mois[k];
     if(!md || !md.updated_at) continue;
     const rev=md.revenus.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-    const dep=md.depenses.reduce((s,dd)=>s+(parseFloat(dd.amount)||0),0);
-    const solde=rev-dep;
+    const dep=md.depenses.filter(d=>d.cat_slug!=='epargne').reduce((s,dd)=>s+(parseFloat(dd.amount)||0),0);
+    const epg=md.depenses.filter(d=>d.cat_slug==='epargne').reduce((s,dd)=>s+(parseFloat(dd.amount)||0),0);
+    const det=STATE.dettes.filter(x=>!x.done).reduce((s,x)=>s+(parseFloat(x.monthly)||0),0);
+    const solde=rev-dep-epg-det;
     sc.innerHTML+=`<div class="stat-month-card"><div style="font-weight:600;font-size:14px">${MONTHS[d.getMonth()]} ${d.getFullYear()}</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green);margin-top:6px">Rev: ${rev>0?Math.round(rev/1000)+'k':'—'}</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--red)">Dep: ${dep>0?Math.round(dep/1000)+'k':'—'}</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:${solde>=0?'var(--gold)':'var(--red)'}">Solde: ${Math.round(solde/1000)}k</div></div>`;
     shownCount++;
   }
