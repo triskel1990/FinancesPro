@@ -229,8 +229,8 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
     <div class="kpi-card balance"><div class="kpi-icon">⚖️</div><div class="kpi-label">Solde Net</div><div class="kpi-value c-blue" id="kpi-balance">0 FC</div><div class="kpi-sub" id="kpi-balance-sub">Après tout</div></div>
   </div>
   <div class="cards-row cards-2">
-    <div class="section"><div class="section-header"><div class="section-title"><span class="dot"></span> Répartition Revenus</div></div><div class="chart-container" style="height:320px;overflow:visible"><canvas id="chart-income-pie"></canvas></div></div>
-    <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--red)"></span> Répartition Dépenses</div></div><div class="chart-container" style="height:320px;overflow:visible"><canvas id="chart-expense-pie"></canvas></div></div>
+    <div class="section"><div class="section-header"><div class="section-title"><span class="dot"></span> Répartition Revenus</div></div><div style="position:relative;min-height:260px;padding-bottom:20px"><canvas id="chart-income-pie"></canvas></div></div>
+    <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--red)"></span> Répartition Dépenses</div></div><div style="position:relative;min-height:260px;padding-bottom:20px"><canvas id="chart-expense-pie"></canvas></div></div>
   </div>
   <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--gold)"></span> Récapitulatif mensuel</div></div><div id="summary-list"></div></div>
   <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--green)"></span> Avancement dépenses</div></div><div id="progress-list"></div></div>
@@ -981,7 +981,7 @@ function renderIncomePie(md) {
   if (chartIncomePie) chartIncomePie.destroy();
   if (!items.length) { ctx.parentElement.innerHTML='<div style="color:var(--text3);text-align:center;padding:40px">Aucun revenu</div>'; return; }
   const colors=['#34d987','#638cff','#f4c55a','#ffab5e','#8ab4f8','#ff6b6b','#c084fc'];
-  chartIncomePie = new Chart(ctx, {type:'doughnut',data:{labels:items.map(r=>r.icon+' '+r.name),datasets:[{data:items.map(r=>parseFloat(r.amount)||0),backgroundColor:colors,borderWidth:2,borderColor:'var(--card)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#8fa3cc',font:{size:11},padding:10}}}}});
+  chartIncomePie = new Chart(ctx, {type:'doughnut',data:{labels:items.map(r=>r.icon+' '+r.name),datasets:[{data:items.map(r=>parseFloat(r.amount)||0),backgroundColor:colors,borderWidth:2,borderColor:'var(--card)'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{bottom:10}},plugins:{legend:{position:'bottom',align:'start',labels:{color:'#8fa3cc',font:{size:11},padding:8,boxWidth:12,usePointStyle:true}}}}});
 }
 
 function renderExpensePie(md) {
@@ -997,7 +997,7 @@ function renderExpensePie(md) {
   if (chartExpensePie) chartExpensePie.destroy();
   if (!labels.length) { ctx.parentElement.innerHTML='<div style="color:var(--text3);text-align:center;padding:40px">Aucune dépense</div>'; return; }
   const colors=['#ff6b6b','#ffab5e','#f4c55a','#34d987','#638cff','#8ab4f8','#c084fc'];
-  chartExpensePie = new Chart(ctx, {type:'doughnut',data:{labels,datasets:[{data:labels.map(k=>catMap[k]),backgroundColor:colors,borderWidth:2,borderColor:'var(--card)'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{color:'#8fa3cc',font:{size:11},padding:10}}}}});
+  chartExpensePie = new Chart(ctx, {type:'doughnut',data:{labels,datasets:[{data:labels.map(k=>catMap[k]),backgroundColor:colors,borderWidth:2,borderColor:'var(--card)'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{bottom:10}},plugins:{legend:{position:'bottom',align:'start',labels:{color:'#8fa3cc',font:{size:11},padding:8,boxWidth:12,usePointStyle:true}}}}});
 }
 
 // ══════════════════════════════════════════
@@ -1333,11 +1333,21 @@ function refreshStats() {
   // On n'affiche que les mois où des données ont réellement été saisies
   const sc=document.getElementById('stats-cards'); sc.innerHTML='';
   let shownCount = 0;
+  // Mois courant en premier
+  const curKey = getCurrentMonthKey();
+  const curMd  = getMonthData(curKey);
+  const curRev = curMd.revenus.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+  const curDep = curMd.depenses.filter(d=>d.cat_slug!=='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0);
+  const curSolde = curRev - curDep;
+  if (curRev > 0 || curDep > 0) {
+    const curDate = new Date(); 
+    sc.innerHTML += `<div class="stat-month-card" style="border:1px solid rgba(99,140,255,0.4)"><div style="font-weight:700;font-size:14px;color:var(--accent)">★ ${MONTHS[curDate.getMonth()]} ${curDate.getFullYear()}</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green);margin-top:6px">Rev: ${curRev>0?Math.round(curRev/1000)+'k':'—'}</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--red)">Dep: ${curDep>0?Math.round(curDep/1000)+'k':'—'}</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:${curSolde>=0?'var(--gold)':'var(--red)'}">Solde: ${Math.round(curSolde/1000)}k</div></div>`;
+    shownCount++;
+  }
   for(let i=1; i<=12; i++){
     const d=new Date(now.getFullYear(),now.getMonth()-i,1);
     const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
     const md=STATE.mois[k];
-    // N'afficher que si des données existent vraiment (updated_at non vide)
     if(!md || !md.updated_at) continue;
     const rev=md.revenus.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
     const dep=md.depenses.reduce((s,dd)=>s+(parseFloat(dd.amount)||0),0);
