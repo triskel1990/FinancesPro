@@ -1340,7 +1340,9 @@ function refreshStats() {
   const curMd  = getMonthData(curKey);
   const curRev = curMd.revenus.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
   const curDep = curMd.depenses.filter(d=>d.cat_slug!=='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0);
-  const curSolde = curRev - curDep;
+  const curEpg = curMd.depenses.filter(d=>d.cat_slug==='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0);
+  const curDet = STATE.dettes.filter(x=>!x.done).reduce((s,x)=>s+(parseFloat(x.monthly)||0),0);
+  const curSolde = curRev - curDep - curEpg - curDet;
   if (curRev > 0 || curDep > 0) {
     const curDate = new Date(); 
     sc.innerHTML += `<div class="stat-month-card" style="border:1px solid rgba(99,140,255,0.4)"><div style="font-weight:700;font-size:14px;color:var(--accent)">★ ${MONTHS[curDate.getMonth()]} ${curDate.getFullYear()}</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green);margin-top:6px">Rev: ${curRev>0?Math.round(curRev/1000)+'k':'—'}</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--red)">Dep: ${curDep>0?Math.round(curDep/1000)+'k':'—'}</div><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:${curSolde>=0?'var(--gold)':'var(--red)'}">Solde: ${Math.round(curSolde/1000)}k</div></div>`;
