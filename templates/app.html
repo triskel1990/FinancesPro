@@ -221,15 +221,16 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
       <input type="number" id="dash-year" value="2025" style="width:80px" onchange="refreshAll()">
     </div>
   </div>
-  <div class="cards-row cards-4">
+  <div class="cards-row" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
     <div class="kpi-card income"><div class="kpi-icon">💰</div><div class="kpi-label">Total Revenus</div><div class="kpi-value c-green" id="kpi-income">0 FC</div><div class="kpi-sub" id="kpi-income-usd">≈ $0</div></div>
     <div class="kpi-card expense"><div class="kpi-icon">💸</div><div class="kpi-label">Total Dépenses</div><div class="kpi-value c-red" id="kpi-expense">0 FC</div><div class="kpi-sub" id="kpi-expense-pct">0% du revenu</div></div>
     <div class="kpi-card savings"><div class="kpi-icon">💎</div><div class="kpi-label">Épargne</div><div class="kpi-value c-gold" id="kpi-savings">0 FC</div><div class="kpi-sub" id="kpi-savings-usd">≈ $0</div></div>
-    <div class="kpi-card balance"><div class="kpi-icon">⚖️</div><div class="kpi-label">Solde Net</div><div class="kpi-value c-blue" id="kpi-balance">0 FC</div><div class="kpi-sub" id="kpi-balance-sub">Après dépenses</div></div>
+    <div class="kpi-card" style="border-color:rgba(255,171,94,0.3)"><div class="kpi-icon">🏦</div><div class="kpi-label">Remboursement/mois</div><div class="kpi-value" style="color:var(--orange)" id="kpi-debts">0 FC</div><div class="kpi-sub" id="kpi-debts-count">0 dette(s) active(s)</div></div>
+    <div class="kpi-card balance"><div class="kpi-icon">⚖️</div><div class="kpi-label">Solde Net</div><div class="kpi-value c-blue" id="kpi-balance">0 FC</div><div class="kpi-sub" id="kpi-balance-sub">Après tout</div></div>
   </div>
   <div class="cards-row cards-2">
-    <div class="section"><div class="section-header"><div class="section-title"><span class="dot"></span> Répartition Revenus</div></div><div class="chart-container"><canvas id="chart-income-pie"></canvas></div></div>
-    <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--red)"></span> Répartition Dépenses</div></div><div class="chart-container"><canvas id="chart-expense-pie"></canvas></div></div>
+    <div class="section"><div class="section-header"><div class="section-title"><span class="dot"></span> Répartition Revenus</div></div><div class="chart-container" style="height:320px;overflow:visible"><canvas id="chart-income-pie"></canvas></div></div>
+    <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--red)"></span> Répartition Dépenses</div></div><div class="chart-container" style="height:320px;overflow:visible"><canvas id="chart-expense-pie"></canvas></div></div>
   </div>
   <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--gold)"></span> Récapitulatif mensuel</div></div><div id="summary-list"></div></div>
   <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--green)"></span> Avancement dépenses</div></div><div id="progress-list"></div></div>
@@ -926,10 +927,13 @@ function refreshDashboard() {
   const key = getCurrentMonthKey();
   const md = getMonthData(key);
   const totalRev = md.revenus.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-  const totalDep = md.depenses.reduce((s,d)=>s+(parseFloat(d.amount)||0),0);
-  const epargne = md.depenses.filter(d=>d.cat_slug==='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0);
-  const detMon = STATE.dettes.filter(d=>!d.done).reduce((s,d)=>s+(parseFloat(d.monthly)||0),0);
-  const solde = totalRev - totalDep;
+  const epargne  = md.depenses.filter(d=>d.cat_slug==='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0);
+  // Dépenses hors épargne (l'épargne est affichée séparément)
+  const totalDep = md.depenses.filter(d=>d.cat_slug!=='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0);
+  const detMon   = STATE.dettes.filter(d=>!d.done).reduce((s,d)=>s+(parseFloat(d.monthly)||0),0);
+  const detCount = STATE.dettes.filter(d=>!d.done).length;
+  // Solde net = revenus - dépenses (hors épargne) - remboursements
+  const solde    = totalRev - totalDep - detMon - epargne;
 
   document.getElementById('kpi-income').textContent = fmt(totalRev);
   document.getElementById('kpi-income-usd').textContent = '≈ '+fmtUSD(totalRev);
@@ -937,12 +941,20 @@ function refreshDashboard() {
   document.getElementById('kpi-expense-pct').textContent = totalRev>0?Math.round(totalDep/totalRev*100)+'% du revenu':'0% du revenu';
   document.getElementById('kpi-savings').textContent = fmt(epargne);
   document.getElementById('kpi-savings-usd').textContent = '≈ '+fmtUSD(epargne);
+  document.getElementById('kpi-debts').textContent = fmt(detMon);
+  document.getElementById('kpi-debts-count').textContent = detCount+' dette(s) active(s)';
   document.getElementById('kpi-balance').textContent = fmt(solde);
   document.getElementById('kpi-balance-sub').style.color = solde>=0?'var(--green)':'var(--red)';
 
   const sl = document.getElementById('summary-list');
   sl.innerHTML = '';
-  [['Total Revenus',fmt(totalRev),'var(--green)'],['Total Dépenses',fmt(totalDep),'var(--red)'],['Remboursements dettes/mois',fmt(detMon),'var(--orange)'],['Épargne mensuelle',fmt(epargne),'var(--gold)'],['Solde disponible',fmt(solde-detMon),solde-detMon>=0?'var(--accent2)':'var(--red)']].forEach(([l,v,c])=>{
+  [
+    ['Total Revenus', fmt(totalRev), 'var(--green)'],
+    ['Total Dépenses', fmt(totalDep), 'var(--red)'],
+    ['Épargne mensuelle', fmt(epargne), 'var(--gold)'],
+    ['Remboursements/mois', fmt(detMon), 'var(--orange)'],
+    ['Solde Net', fmt(solde), solde>=0?'var(--accent2)':'var(--red)']
+  ].forEach(([l,v,c])=>{
     sl.innerHTML+=`<div class="summary-row"><span class="label">${l}</span><span class="value" style="color:${c}">${v}</span></div>`;
   });
 
@@ -974,7 +986,7 @@ function renderIncomePie(md) {
 
 function renderExpensePie(md) {
   const catMap={};
-  md.depenses.forEach(d=>{
+  md.depenses.filter(d=>d.cat_slug!=='epargne').forEach(d=>{
     const cat=STATE.categories.find(c=>c.slug===d.cat_slug||c.id===d.cat_slug);
     const key=cat?(cat.icon+' '+cat.name):'📦 Autres';
     catMap[key]=(catMap[key]||0)+(parseFloat(d.amount)||0);
@@ -1205,6 +1217,7 @@ function refreshDettes() {
         <button class="btn btn-secondary btn-sm" onclick="payDette('${d.id}')">💳 Paiement manuel</button>
         <button class="btn btn-secondary btn-sm" onclick="editAutopay('${d.id}')" style="color:var(--gold);border-color:rgba(244,197,90,0.3)">⚡ ${d.autopay?'Modifier auto':'Activer auto'}</button>
         ${remaining===0?`<button class="btn btn-gold btn-sm" onclick="markDetteDone('${d.id}')">✓ Soldée</button>`:''}
+        <button class="btn btn-secondary btn-sm" onclick="editDette('${d.id}')">✏️ Modifier</button>
         <button class="btn btn-danger btn-sm" onclick="deleteDette('${d.id}')">Supprimer</button>
       </div>
     </div>`;
@@ -1306,7 +1319,7 @@ async function deleteDette(id) {
 // ══════════════════════════════════════════
 function refreshStats() {
   const now=new Date(); const labels=[],revData=[],depData=[],savData=[],pctData=[];
-  for(let i=6;i>=1;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');labels.push(MONTHS[d.getMonth()].slice(0,3));const md=STATE.mois[k];const rev=md?md.revenus.reduce((s,r)=>s+(parseFloat(r.amount)||0),0):0;const dep=md?md.depenses.reduce((s,d)=>s+(parseFloat(d.amount)||0),0):0;const sav=md?md.depenses.filter(d=>d.cat_slug==='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0):0;revData.push(rev);depData.push(dep);savData.push(sav);pctData.push(rev>0?Math.round(dep/rev*100):0);}
+  for(let i=6;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');labels.push(MONTHS[d.getMonth()].slice(0,3)+(i===0?' ★':''));const md=STATE.mois[k]||getMonthData(k);const rev=md?md.revenus.reduce((s,r)=>s+(parseFloat(r.amount)||0),0):0;const dep=md?md.depenses.filter(d=>d.cat_slug!=='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0):0;const sav=md?md.depenses.filter(d=>d.cat_slug==='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0):0;revData.push(rev);depData.push(dep);savData.push(sav);pctData.push(rev>0?Math.round(dep/rev*100):0);}
   const ctx1=document.getElementById('chart-vs');
   if(chartVs) chartVs.destroy();
   chartVs=new Chart(ctx1,{type:'bar',data:{labels,datasets:[{label:'Revenus',data:revData,backgroundColor:'rgba(52,217,135,0.6)',borderColor:'var(--green)',borderWidth:2,borderRadius:6},{label:'Dépenses',data:depData,backgroundColor:'rgba(255,107,107,0.6)',borderColor:'var(--red)',borderWidth:2,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#8fa3cc'}}},scales:{x:{ticks:{color:'#5a6e94'}},y:{ticks:{color:'#5a6e94',callback:v=>Math.round(v/1000)+'k'}}}}});
@@ -1778,11 +1791,36 @@ function toggleAutopay() {
   }
 }
 
+let _editingDetteId = null;
+
 function openDetteModal() {
+  _editingDetteId = null;
+  document.getElementById('modal-dette-title').textContent = '🏦 Nouvelle dette / crédit';
   ['m-det-name','m-det-total','m-det-monthly','m-det-paid','m-det-bank','m-det-notes','m-det-autopay-day','m-det-autopay-amount'].forEach(id=>document.getElementById(id).value='');
   _autopayEnabled = false;
   document.getElementById('toggle-autopay').classList.remove('on');
   document.getElementById('autopay-options').style.display = 'none';
+  openModal('modal-dette');
+}
+
+function editDette(id) {
+  const d = STATE.dettes.find(x=>x.id===id);
+  if (!d) return;
+  _editingDetteId = id;
+  document.getElementById('modal-dette-title').textContent = '✏️ Modifier la dette';
+  document.getElementById('m-det-name').value    = d.name||'';
+  document.getElementById('m-det-bank').value    = d.bank||'';
+  document.getElementById('m-det-total').value   = d.total||'';
+  document.getElementById('m-det-monthly').value = d.monthly||'';
+  document.getElementById('m-det-paid').value    = d.paid||'';
+  document.getElementById('m-det-notes').value   = d.notes||'';
+  _autopayEnabled = !!d.autopay;
+  const toggle = document.getElementById('toggle-autopay');
+  const opts   = document.getElementById('autopay-options');
+  if (_autopayEnabled) { toggle.classList.add('on'); opts.style.display='block'; }
+  else                 { toggle.classList.remove('on'); opts.style.display='none'; }
+  document.getElementById('m-det-autopay-day').value    = d.autopay_day||'';
+  document.getElementById('m-det-autopay-amount').value = d.autopay_amount||'';
   openModal('modal-dette');
 }
 
@@ -1793,8 +1831,6 @@ async function saveDette() {
   const paid    = parseFloat(document.getElementById('m-det-paid').value)||0;
   const bank    = document.getElementById('m-det-bank').value.trim();
   const notes   = document.getElementById('m-det-notes').value.trim();
-
-  // Paiement auto
   const autopay        = _autopayEnabled;
   const autopay_day    = autopay ? parseInt(document.getElementById('m-det-autopay-day').value)||null : null;
   const autopay_amount = autopay ? (parseFloat(document.getElementById('m-det-autopay-amount').value)||null) : null;
@@ -1802,11 +1838,25 @@ async function saveDette() {
   if (!name || !total) return notify('Remplissez les champs obligatoires.','var(--red)');
   if (autopay && !autopay_day) return notify('Précisez le jour du paiement automatique (1-31).','var(--orange)');
 
-  const res = await api('POST','/api/dettes',{name,bank,total,monthly,paid,notes,autopay,autopay_day,autopay_amount});
-  const dette = {id:res?.id||('det_'+Date.now()),name,bank,total,monthly,paid,notes,autopay,autopay_day,autopay_amount,done:false,updated_at:now_iso()};
-  STATE.dettes.push(dette); saveState(); closeModal('modal-dette'); refreshDettes();
-  if (autopay) notify(`Dette enregistrée avec paiement auto le ${autopay_day} de chaque mois`, 'var(--gold)');
-  else notify('Dette enregistrée : '+name,'var(--red)');
+  if (_editingDetteId) {
+    // Mode édition
+    const idx = STATE.dettes.findIndex(x=>x.id===_editingDetteId);
+    if (idx>=0) {
+      STATE.dettes[idx] = {...STATE.dettes[idx], name, bank, total, monthly, paid, notes, autopay, autopay_day, autopay_amount, updated_at: now_iso()};
+      saveState();
+      await api('PUT', `/api/dettes/${_editingDetteId}`, {name, bank, total, monthly, paid, notes, autopay, autopay_day, autopay_amount});
+      closeModal('modal-dette'); refreshDettes(); refreshDashboard();
+      notify('Dette modifiée : '+name, 'var(--green)');
+    }
+    _editingDetteId = null;
+  } else {
+    // Mode création
+    const res = await api('POST','/api/dettes',{name,bank,total,monthly,paid,notes,autopay,autopay_day,autopay_amount});
+    const dette = {id:res?.id||('det_'+Date.now()),name,bank,total,monthly,paid,notes,autopay,autopay_day,autopay_amount,done:false,updated_at:now_iso()};
+    STATE.dettes.push(dette); saveState(); closeModal('modal-dette'); refreshDettes(); refreshDashboard();
+    if (autopay) notify(`Dette enregistrée avec paiement auto le ${autopay_day} de chaque mois`, 'var(--gold)');
+    else notify('Dette enregistrée : '+name,'var(--red)');
+  }
 }
 
 function openCatModal() { document.getElementById('m-cat-name').value=''; document.getElementById('m-cat-icon').value='📦'; document.getElementById('m-cat-icon-preview').textContent='📦'; openModal('modal-cat'); setTimeout(()=>buildEmojiGridCat('📦'),50); }
