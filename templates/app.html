@@ -229,8 +229,8 @@ body::after{content:'';position:fixed;bottom:-10%;right:-5%;width:50%;height:50%
     <div class="kpi-card balance"><div class="kpi-icon">⚖️</div><div class="kpi-label">Solde Net</div><div class="kpi-value c-blue" id="kpi-balance">0 FC</div><div class="kpi-sub" id="kpi-balance-sub">Après tout</div></div>
   </div>
   <div class="cards-row cards-2">
-    <div class="section"><div class="section-header"><div class="section-title"><span class="dot"></span> Répartition Revenus</div></div><div style="position:relative;min-height:260px;padding-bottom:20px"><canvas id="chart-income-pie"></canvas></div></div>
-    <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--red)"></span> Répartition Dépenses</div></div><div style="position:relative;min-height:260px;padding-bottom:20px"><canvas id="chart-expense-pie"></canvas></div></div>
+    <div class="section"><div class="section-header"><div class="section-title"><span class="dot"></span> Répartition Revenus</div></div><div style="position:relative;height:380px"><canvas id="chart-income-pie"></canvas></div></div>
+    <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--red)"></span> Répartition Dépenses</div></div><div style="position:relative;height:380px"><canvas id="chart-expense-pie"></canvas></div></div>
   </div>
   <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--gold)"></span> Récapitulatif mensuel</div></div><div id="summary-list"></div></div>
   <div class="section"><div class="section-header"><div class="section-title"><span class="dot" style="background:var(--green)"></span> Avancement dépenses</div></div><div id="progress-list"></div></div>
@@ -981,7 +981,8 @@ function renderIncomePie(md) {
   if (chartIncomePie) chartIncomePie.destroy();
   if (!items.length) { ctx.parentElement.innerHTML='<div style="color:var(--text3);text-align:center;padding:40px">Aucun revenu</div>'; return; }
   const colors=['#34d987','#638cff','#f4c55a','#ffab5e','#8ab4f8','#ff6b6b','#c084fc'];
-  chartIncomePie = new Chart(ctx, {type:'doughnut',data:{labels:items.map(r=>r.icon+' '+r.name),datasets:[{data:items.map(r=>parseFloat(r.amount)||0),backgroundColor:colors,borderWidth:2,borderColor:'var(--card)'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{bottom:10}},plugins:{legend:{position:'bottom',align:'start',labels:{color:'#8fa3cc',font:{size:11},padding:8,boxWidth:12,usePointStyle:true}}}}});
+  const incomeLabels = items.map(r=>{const s=r.icon+' '+r.name; return s.length>14?s.slice(0,13)+'…':s;});
+  chartIncomePie = new Chart(ctx, {type:'doughnut',data:{labels:incomeLabels,datasets:[{data:items.map(r=>parseFloat(r.amount)||0),backgroundColor:colors,borderWidth:2,borderColor:'var(--card)'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:8},plugins:{legend:{position:'bottom',align:'center',labels:{color:'#8fa3cc',font:{size:11},padding:12,boxWidth:10,usePointStyle:true}}}}});
 }
 
 function renderExpensePie(md) {
@@ -997,7 +998,8 @@ function renderExpensePie(md) {
   if (chartExpensePie) chartExpensePie.destroy();
   if (!labels.length) { ctx.parentElement.innerHTML='<div style="color:var(--text3);text-align:center;padding:40px">Aucune dépense</div>'; return; }
   const colors=['#ff6b6b','#ffab5e','#f4c55a','#34d987','#638cff','#8ab4f8','#c084fc'];
-  chartExpensePie = new Chart(ctx, {type:'doughnut',data:{labels,datasets:[{data:labels.map(k=>catMap[k]),backgroundColor:colors,borderWidth:2,borderColor:'var(--card)'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{bottom:10}},plugins:{legend:{position:'bottom',align:'start',labels:{color:'#8fa3cc',font:{size:11},padding:8,boxWidth:12,usePointStyle:true}}}}});
+  const expenseLabels = labels.map(s=>s.length>14?s.slice(0,13)+'…':s);
+  chartExpensePie = new Chart(ctx, {type:'doughnut',data:{labels:expenseLabels,datasets:[{data:labels.map(k=>catMap[k]),backgroundColor:colors,borderWidth:2,borderColor:'var(--card)'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:8},plugins:{legend:{position:'bottom',align:'center',labels:{color:'#8fa3cc',font:{size:11},padding:12,boxWidth:10,usePointStyle:true}}}}});
 }
 
 // ══════════════════════════════════════════
