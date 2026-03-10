@@ -854,6 +854,8 @@ async function init() {
 
   // Vérifier les paiements automatiques au démarrage
   setTimeout(checkAutopayments, 1500);
+  // Initialiser l'IA vocale
+  initAI();
 }
 
 function logout() { window.location.href = '/logout'; }
@@ -885,6 +887,11 @@ function showPage(page) {
   const handlers = {dashboard:refreshDashboard,revenus:refreshRevenus,depenses:refreshDepenses,dettes:refreshDettes,stats:refreshStats,settings:refreshSettings};
   if (handlers[page]) handlers[page]();
   document.getElementById('sidebar').classList.remove('open');
+  // Informer Aria de la page active
+  _aiCurrentPage = page;
+  if (_aiGreeted && !_aiSpeaking && !_aiAwaitingReply) {
+    setTimeout(() => { if (!_aiSpeaking) aiSpeak(aiPageComment(page)); }, 1200);
+  }
 }
 function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
 function refreshAll() { const p = document.querySelector('.page.active')?.id?.replace('page-',''); if(p) showPage(p); }
@@ -1891,7 +1898,558 @@ async function saveUser() {
 // ══════════════════════════════════════════
 // START
 // ══════════════════════════════════════════
+
+// ══════════════════════════════════════════
+// IA VOCALE FINANCIÈRE — ASSISTANTE ARIA
+// ══════════════════════════════════════════
+let _aiSpeaking = false;
+let _aiGreeted = false;
+let _aiMsgIndex = 0;
+let _aiCurrentPage = 'dashboard';
+let _aiAwaitingReply = false;
+let _aiReplyCallback = null;
+let _aiListening = false;
+
+// Selection de la meilleure voix feminine francaise
+let _ariaVoice = null;
+function aiPickVoice() {
+  const voices = window.speechSynthesis.getVoices();
+  const preferred = ['Amelie','Lea','Julie','Marie','Audrey','Claire','Alice','Juliette','Manon','Celine','Lucie','Camille','Elsa'];
+  for (const name of preferred) {
+    const v = voices.find(v => v.lang === 'fr-FR' && v.name.toLowerCase().includes(name.toLowerCase()));
+    if (v) { _ariaVoice = v; break; }
+  }
+  if (!_ariaVoice) _ariaVoice = voices.find(v => v.lang === 'fr-FR');
+  if (!_ariaVoice) _ariaVoice = voices.find(v => v.lang.startsWith('fr'));
+  console.log('[Aria] Voix selectionnee :', _ariaVoice?.name || 'aucune');
+}
+
+function aiSpeak(text, onEnd) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const clean = text.replace(/[\u{1F300}-\u{1FAFF}]/gu, '').replace(/[\u2605\u2022\u00B7]/g, '').trim();
+  const sentences = clean.match(/[^.!?]+[.!?]+/g) || [clean];
+  let i = 0;
+  const bubble = document.getElementById('ai-speech-bubble');
+  const bubbleText = document.getElementById('ai-speech-text');
+  if (bubble) bubble.style.display = 'block';
+  _aiSpeaking = true;
+  ['ai-ring1','ai-ring2','ai-ring3'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'block'; });
+  const orbInner = document.getElementById('ai-orb-inner');
+  if (orbInner) orbInner.textContent = '🔊';
+  function speakNext() {
+    if (i >= sentences.length) {
+      _aiSpeaking = false;
+      ['ai-ring1','ai-ring2','ai-ring3'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+      if (orbInner) orbInner.textContent = '🎙️';
+      setTimeout(() => { const b = document.getElementById('ai-speech-bubble'); if (b && !_aiAwaitingReply) b.style.display = 'none'; }, 4000);
+      if (onEnd) onEnd();
+      return;
+    }
+    const s = sentences[i++].trim();
+    if (!s) { speakNext(); return; }
+    if (bubbleText) bubbleText.textContent = s;
+    const utter = new SpeechSynthesisUtterance(s);
+    utter.lang = 'fr-FR';
+    utter.rate = 0.82;
+    utter.pitch = 1.15;
+    utter.volume = 1;
+    if (_ariaVoice) utter.voice = _ariaVoice;
+    utter.onend = () => setTimeout(speakNext, 220);
+    utter.onerror = () => speakNext();
+    window.speechSynthesis.speak(utter);
+  }
+  speakNext();
+}
+
+function aiSpeakQueue(messages, delay, idx) {
+  idx = idx || 0; delay = delay || 2800;
+  if (idx >= messages.length) return;
+  aiSpeak(messages[idx], () => { if (idx + 1 < messages.length) setTimeout(() => aiSpeakQueue(messages, delay, idx+1), delay); });
+}
+
+function aiAskQuestion(question, callback) {
+  _aiAwaitingReply = true;
+  _aiReplyCallback = callback;
+  aiSpeak(question, () => {
+    const box = document.getElementById('ai-reply-box');
+    const input = document.getElementById('ai-reply-input');
+    if (box) box.style.display = 'block';
+    if (input) { input.value = ''; setTimeout(() => input.focus(), 300); }
+  });
+}
+
+function aiSendReply() {
+  const input = document.getElementById('ai-reply-input');
+  const reply = input?.value?.trim();
+  if (!reply) return;
+  aiCloseReply();
+  if (_aiReplyCallback) {
+    const cb = _aiReplyCallback;
+    _aiReplyCallback = null;
+    setTimeout(() => cb(reply), 500);
+  }
+}
+
+function aiCloseReply() {
+  _aiAwaitingReply = false;
+  _aiReplyCallback = null;
+  const box = document.getElementById('ai-reply-box');
+  const bubble = document.getElementById('ai-speech-bubble');
+  if (box) box.style.display = 'none';
+  if (bubble) bubble.style.display = 'none';
+}
+
+function aiStartListening() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    notify('Reconnaissance vocale non disponible sur ce navigateur.', 'var(--orange)'); return;
+  }
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new Rec();
+  rec.lang = 'fr-FR'; rec.interimResults = false; rec.maxAlternatives = 1;
+  const micBtn = document.getElementById('ai-mic-btn');
+  if (micBtn) { micBtn.textContent = '🔴'; micBtn.style.background = 'rgba(255,107,107,0.2)'; }
+  _aiListening = true;
+  rec.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    const input = document.getElementById('ai-reply-input');
+    if (input) input.value = transcript;
+    if (micBtn) { micBtn.textContent = '🎤'; micBtn.style.background = ''; }
+    _aiListening = false;
+    setTimeout(() => aiSendReply(), 500);
+  };
+  rec.onerror = () => {
+    if (micBtn) { micBtn.textContent = '🎤'; micBtn.style.background = ''; }
+    _aiListening = false;
+    notify('Micro indisponible. Tapez votre réponse.', 'var(--orange)');
+  };
+  rec.start();
+}
+
+function toggleAI() {
+  if (_aiSpeaking) {
+    window.speechSynthesis.cancel(); _aiSpeaking = false;
+    ['ai-ring1','ai-ring2','ai-ring3'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+    const orbInner = document.getElementById('ai-orb-inner'); if (orbInner) orbInner.textContent = '🎙️';
+    const b = document.getElementById('ai-speech-bubble'); if (b) b.style.display = 'none';
+    aiCloseReply();
+  } else { aiAnalyzeAndSpeak(); }
+}
+
+function aiGetData() {
+  const key = getCurrentMonthKey(); const md = getMonthData(key);
+  const rev = md.revenus.reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+  const dep = md.depenses.filter(d=>d.cat_slug!=='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0);
+  const epg = md.depenses.filter(d=>d.cat_slug==='epargne').reduce((s,d)=>s+(parseFloat(d.amount)||0),0);
+  const det = STATE.dettes.filter(d=>!d.done).reduce((s,d)=>s+(parseFloat(d.monthly)||0),0);
+  const solde = rev - dep - epg - det;
+  const pct = rev > 0 ? Math.round(dep/rev*100) : 0;
+  const tauxEpg = rev > 0 ? Math.round(epg/rev*100) : 0;
+  const activeDettes = STATE.dettes.filter(d=>!d.done);
+  const moisLabel = MONTHS[new Date().getMonth()];
+  return {rev, dep, epg, det, solde, pct, tauxEpg, activeDettes, moisLabel, md};
+}
+
+function aiGreet() {
+  if (_aiGreeted) return; _aiGreeted = true;
+  const name = STATE.user?.username?.split(' ')[0] || 'ami';
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon apres-midi' : 'Bonsoir';
+  const lingala = ['Mbote ! ', 'Boyei bolamu ! ', 'Sango nini ! '][Math.floor(Math.random()*3)];
+  const d = aiGetData();
+  const messages = [];
+
+  messages.push(`${lingala}${greet} ${name} ! Je suis Aria, votre assistante financiere personnelle. Je suis la pour analyser vos donnees et vous guider chaque jour.`);
+
+  if (d.rev === 0) {
+    messages.push(`Je viens de consulter vos donnees pour ${d.moisLabel}. Vous navez pas encore saisi vos revenus. Commencez par la, cest la base de toute bonne gestion financiere.`);
+  } else {
+    messages.push(`Jai analyse vos finances pour ${d.moisLabel}. Revenus : ${Math.round(d.rev/1000)} mille francs. Depenses : ${d.pct} pourcent de vos revenus. ${d.pct > 70 ? "Cest eleve, voyons comment ameliorer ca." : "Bonne maitrise du budget !"}`);
+  }
+
+  if (d.epg === 0 && d.rev > 0) {
+    messages.push(`Aucune epargne ce mois-ci ${name}. Je vous recommande de mettre de cote au moins ${Math.round(d.rev*0.1/1000)} mille francs. Lepargne reguliere construit votre securite.`);
+  } else if (d.tauxEpg >= 15) {
+    messages.push(`Felicitations ! Vous epargnez ${d.tauxEpg} pourcent de vos revenus. Excellent travail, continuez !`);
+  } else if (d.tauxEpg > 0) {
+    messages.push(`Vous epargnez ${d.tauxEpg} pourcent. Bon debut ! Visez 15 a 20 pourcent pour plus de securite.`);
+  }
+
+  if (d.activeDettes.length > 0) {
+    const totalRest = d.activeDettes.reduce((s,x)=>s+Math.max(0,(parseFloat(x.total)||0)-(parseFloat(x.paid)||0)),0);
+    messages.push(`Vous avez ${d.activeDettes.length} dette${d.activeDettes.length>1?'s':''} active${d.activeDettes.length>1?'s':''}. Restant : ${Math.round(totalRest/1000)} mille francs. Courage, vous y arriverez !`);
+  }
+
+  if (d.solde < 0 && d.rev > 0) {
+    messages.push(`Attention ${name} ! Solde negatif ce mois-ci. Reduisez vos depenses variables immediatement.`);
+  } else if (d.solde > 0 && d.rev > 0) {
+    messages.push(`Solde net positif de ${Math.round(d.solde/1000)} mille francs. Tres bien ! Reinvestissez ce surplus dans votre epargne.`);
+  }
+
+  // Blague ou motivation aléatoire
+  const fun = [
+    `Et pour finir sur une note legere : pourquoi les comptables font-ils de bons amis ? Parce quils savent toujours ou va largent ! Ha ha ha.`,
+    `Un petit proverbe congolais pour commencer : Moto ya mayi ekoki koleka, kasi te kobeba. Celui qui traverse la riviere peut passer, mais il ne doit pas se noyer. Gerez bien vos finances !`,
+    `Petite blague du jour : un homme dit a son banquier, jai un probleme dargent. Le banquier repond : moi aussi ! Mais ensemble, nous allons trouver une solution.`,
+  ];
+  messages.push(fun[Math.floor(Math.random()*fun.length)]);
+
+  setTimeout(() => aiSpeakQueue(messages, 2600, 0), 1500);
+}
+
+// Commentaires par page
+function aiPageComment(page) {
+  const name = STATE.user?.username?.split(' ')[0] || 'ami';
+  const d = aiGetData();
+  const comments = {
+    dashboard: [
+      `Vous consultez votre tableau de bord. Cest ici que tout commence. Verifiez votre solde net et assurez-vous quil est toujours positif.`,
+      `Votre tableau de bord montre un solde de ${Math.round(d.solde/1000)} mille francs ce mois-ci. ${d.solde >= 0 ? 'Bonne gestion !' : 'Attention, il faut reduire les depenses !'}`,
+    ],
+    revenus: [
+      `Vous etes dans la section Revenus. ${d.rev > 0 ? `Vos revenus de ${Math.round(d.rev/1000)} mille francs sont bien enregistres.` : 'Pensez a saisir tous vos revenus pour un suivi precis.'} Diversifiez vos sources de revenus pour plus de stabilite.`,
+      `Mbote ! Les revenus cest la base. Plus vous en avez de sources differentes, plus vous etes en securite financiere. Avez-vous pense a des activites complementaires ?`,
+    ],
+    depenses: [
+      `Section Depenses. ${d.pct > 70 ? `Vos depenses representent ${d.pct} pourcent de vos revenus, cest eleve. Identifiez ce que vous pouvez reduire.` : `Vos depenses sont bien controlees a ${d.pct} pourcent. Continuez ainsi !`}`,
+      `Boyei bolamu ! Avant dajouter une nouvelle depense, demandez-vous : est-ce un besoin ou une envie ? Cette simple question peut vous faire economiser beaucoup chaque mois.`,
+      `Conseil pour vos depenses : utilisez la methode des enveloppes. Allouez un budget fixe a chaque categorie et ne le depassez pas. Cest simple mais tres efficace.`,
+    ],
+    dettes: [
+      d.activeDettes.length > 0
+        ? `Vous avez ${d.activeDettes.length} dette${d.activeDettes.length>1?'s':''} active${d.activeDettes.length>1?'s':''}. Chaque remboursement vous rapproche de la liberte financiere. Ne laissez jamais passer un echeance.`
+        : `Pas de dettes actives ! Cest une excellente position. Felicitations ${name} !`,
+      `Concernant vos dettes : la regle dor est de ne jamais emprunter pour consommer. Empruntez uniquement pour investir dans quelque chose qui prend de la valeur.`,
+    ],
+    stats: [
+      `Vous consultez vos statistiques. Analyser ses finances sur plusieurs mois est une excellente habitude. Cela vous permet de voir les tendances et dannticiper.`,
+      `Vos statistiques sur 6 mois vous donnent une vision claire de votre evolution. Si vous voyez une tendance a la hausse des depenses, corrigez le tir avant que cela devienne critique.`,
+    ],
+    settings: [
+      `Vous etes dans les parametres. Assurez-vous que votre taux de change est a jour pour des calculs precis en dollars.`,
+      `Pensez a faire une sauvegarde de vos donnees regulierement depuis les parametres. Mieux vaut prevenir que guerir !`,
+    ],
+  };
+  const list = comments[page] || comments.dashboard;
+  return list[Math.floor(Math.random()*list.length)];
+}
+
+function aiAnalyzeAndSpeak() {
+  const name = STATE.user?.username?.split(' ')[0] || 'ami';
+  const d = aiGetData();
+  const page = _aiCurrentPage;
+
+  // 30% de chance de faire un sujet fun/blague
+  const rand = Math.random();
+
+  if (rand < 0.2) {
+    // Blague ou anecdote
+    const fun = [
+      `Petite blague financiere : pourquoi largent ne fait pas le bonheur ? Parce quil faut aussi des dettes pour stresser ! Ha ha. Mais serieusement ${name}, gerez bien vos finances et vous dormirez mieux.`,
+      `Saviez-vous que Warren Buffett a commence a investir a 11 ans ? Il dit toujours : le meilleur moment pour investir etait hier, le deuxieme meilleur moment cest maintenant.`,
+      `Mbote ${name} ! Un proverbe africain dit : la foret qui brule seteint elle-meme, mais les dettes non remboursees grandissent toutes seules. Restez vigilant sur vos engagements.`,
+      `Boyei bolamu ! Petit rappel amusant : si vous posez votre telephone 30 minutes par jour au lieu de scroller, vous economisez du temps et parfois de largent evite en achats impulsifs en ligne !`,
+      `Ha ha, petite blague : un homme entre dans une banque et dit je voudrais ouvrir un compte. Le banquier demande : un compte courant ? Il repond non, un compte qui rapporte ! Malheureusement, ca nexiste presque plus. Donc epargnez intelligemment !`,
+      `Anecdote vraie : le fondateur de IKEA, Ingvar Kamprad, etait milliardaire mais prenait le bus et achetait ses legumes au marche le soir quand les prix baissaient. La richesse vient de la discipline, pas du gaspillage.`,
+    ];
+    aiSpeak(fun[Math.floor(Math.random()*fun.length)]);
+    return;
+  }
+
+  if (rand < 0.45) {
+    // Commentaire selon la page active
+    aiSpeak(aiPageComment(page));
+    return;
+  }
+
+  if (rand < 0.6) {
+    // Question interactive
+    const questions = [
+      {
+        q: `${name}, avez-vous un objectif financier precis pour ce mois-ci ? Dites-moi ce que vous voulez atteindre et je vous aiderai.`,
+        cb: (r) => aiSpeak(`Excellent objectif ! "${r}" - Pour y arriver, je vous suggere de le diviser en petites etapes hebdomadaires. Chaque semaine, verifiez votre progression. Vous pouvez le faire !`)
+      },
+      {
+        q: `Petite question ${name} : sur une echelle de 1 a 10, comment evaluez-vous votre gestion financiere ce mois-ci ?`,
+        cb: (r) => {
+          const n = parseInt(r);
+          if (n >= 8) aiSpeak(`${r} sur 10 ! Cest excellent ! Vous etes tres rigoureux. Continuez et essayez de maintenir ce niveau le mois prochain.`);
+          else if (n >= 5) aiSpeak(`${r} sur 10. Cest bien mais on peut faire mieux ! Concentrez-vous sur la reduction de vos depenses variables et augmentez votre epargne.`);
+          else aiSpeak(`${r} sur 10. Ne vous decouragez pas ${name}. Chaque mois est une nouvelle opportunite de faire mieux. Definissons ensemble un objectif simple pour ce mois.`);
+        }
+      },
+      {
+        q: `${name}, quelle est votre plus grande preoccupation financiere en ce moment ? Parlez-moi librement.`,
+        cb: (r) => aiSpeak(`Je comprends votre preoccupation concernant "${r}". Cest important den etre conscient. La premiere etape est didentifier le probleme, la deuxieme est dagir. Vous avez deja fait la premiere etape en men parlant !`)
+      },
+      {
+        q: `Question du jour : avez-vous fait une depense que vous regrettez ce mois-ci ? Soyez honnete avec moi !`,
+        cb: (r) => {
+          if (r.toLowerCase().includes('non') || r.toLowerCase().includes('pas')) {
+            aiSpeak(`Bravo ${name} ! Aucun regret cest le signe dune excellente discipline financiere. Continuez ainsi !`);
+          } else {
+            aiSpeak(`Merci pour votre honnetete. Concernant "${r}", rappelez-vous : lerreur est humaine. Limpportant est de ne pas la repeter. La prochaine fois, attendez 48 heures avant tout achat impulsif.`);
+          }
+        }
+      },
+    ];
+    const q = questions[Math.floor(Math.random()*questions.length)];
+    aiAskQuestion(q.q, q.cb);
+    return;
+  }
+
+  // Conseil financier classique selon les données
+  const pools = [
+    d.pct > 70
+      ? `Votre taux de depense de ${d.pct} pourcent est eleve. Identifiez les 3 postes principaux et reduisez chacun de 10 pourcent. Cela peut transformer votre situation rapidement.`
+      : `Taux de depense de ${d.pct} pourcent. Bien joue ! Pour optimiser encore, appliquez la regle 50-30-20.`,
+    d.epg === 0
+      ? `Pas depargne ce mois-ci ${name}. Creez une depense fixe Epargne et versez-vous en premier avant toute autre depense. Meme 30 mille francs par mois font une difference sur un an.`
+      : `Votre epargne de ${Math.round(d.epg/1000)} mille francs par mois. En un an : ${Math.round(d.epg*12/1000)} mille francs. En 5 ans : ${Math.round(d.epg*60/1000)} mille francs. Continuez !`,
+    d.activeDettes.length > 0
+      ? `Methode boule de neige pour vos dettes : remboursez dabord la plus petite dette totalement, puis ajoutez ce montant a la suivante. Motivant et efficace.`
+      : `Zero dette active. Profitez-en pour epargner et investir maintenant !`,
+    `Fonds durgence : avez-vous ${Math.round(d.dep*3/1000)} a ${Math.round(d.dep*6/1000)} mille francs en reserve ? Cest le minimum recommande pour 3 a 6 mois de depenses.`,
+    `Diversifiez vos revenus ${name}. Une seule source de revenus cest fragile. Pensez a une activite secondaire, meme petite.`,
+    `Boyei bolamu ! Regle importante : ne comparez pas votre situation financiere a celle des autres. Concentrez-vous sur votre propre progression mois apres mois.`,
+    d.solde > 0
+      ? `Solde positif de ${Math.round(d.solde/1000)} mille francs. Excellente opportunite dinvestir ce surplus dans votre avenir !`
+      : `Solde negatif ce mois. Action immediate : listez toutes vos depenses variables et eliminez celles qui ne sont pas essentielles.`,
+    `Saviez-vous que noter vos objectifs par ecrit augmente de 42 pourcent la probabilite de les atteindre ? Ecrivez votre objectif financier du mois !`,
+  ];
+  const msg = pools[_aiMsgIndex % pools.length];
+  _aiMsgIndex++;
+  aiSpeak(msg);
+}
+
+// ── Chat IA intelligent avec Claude API ──
+let _aiChatHistory = [];
+
+function aiToggleChat() {
+  const box = document.getElementById('ai-chat-box');
+  if (!box) return;
+  const visible = box.style.display !== 'none';
+  box.style.display = visible ? 'none' : 'block';
+  if (!visible) {
+    setTimeout(() => document.getElementById('ai-chat-input')?.focus(), 200);
+  }
+}
+
+function aiChatAddMessage(role, text) {
+  const msgs = document.getElementById('ai-chat-messages');
+  if (!msgs) return;
+  const isUser = role === 'user';
+  const div = document.createElement('div');
+  div.style.cssText = `display:flex;justify-content:${isUser?'flex-end':'flex-start'}`;
+  div.innerHTML = `<div style="max-width:85%;padding:9px 13px;border-radius:${isUser?'14px 14px 4px 14px':'14px 14px 14px 4px'};background:${isUser?'var(--accent)':'var(--bg3)'};color:${isUser?'white':'var(--text)'};font-size:13px;line-height:1.5;border:1px solid ${isUser?'transparent':'var(--border)'}">${text}</div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function aiChatTyping(show) {
+  const msgs = document.getElementById('ai-chat-messages');
+  if (!msgs) return;
+  const existing = document.getElementById('ai-typing');
+  if (show && !existing) {
+    const div = document.createElement('div');
+    div.id = 'ai-typing';
+    div.style.cssText = 'display:flex;justify-content:flex-start';
+    div.innerHTML = `<div style="padding:9px 13px;border-radius:14px 14px 14px 4px;background:var(--bg3);border:1px solid var(--border);display:flex;gap:4px;align-items:center"><span style="width:7px;height:7px;background:var(--accent);border-radius:50%;animation:loadDot 1.2s ease-in-out infinite"></span><span style="width:7px;height:7px;background:var(--accent);border-radius:50%;animation:loadDot 1.2s ease-in-out 0.2s infinite"></span><span style="width:7px;height:7px;background:var(--accent);border-radius:50%;animation:loadDot 1.2s ease-in-out 0.4s infinite"></span></div>`;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  } else if (!show && existing) {
+    existing.remove();
+  }
+}
+
+async function aiChatSend() {
+  const input = document.getElementById('ai-chat-input');
+  const question = input?.value?.trim();
+  if (!question) return;
+  input.value = '';
+
+  aiChatAddMessage('user', question);
+  _aiChatHistory.push({role:'user', content: question});
+
+  aiChatTyping(true);
+
+  // Contexte financier de l'utilisateur
+  const d = aiGetData();
+  const name = STATE.user?.username?.split(' ')[0] || 'ami';
+  const context = `Tu es Aria, une assistante financiere personnelle intelligente, chaleureuse et motivante. Tu parles en francais. Tu connais les donnees financieres de ${name} : revenus ${Math.round(d.rev/1000)}k FC, depenses ${Math.round(d.dep/1000)}k FC (${d.pct}% des revenus), epargne ${Math.round(d.epg/1000)}k FC (${d.tauxEpg}%), remboursements dettes ${Math.round(d.det/1000)}k FC/mois, ${d.activeDettes.length} dette(s) active(s), solde net ${Math.round(d.solde/1000)}k FC. Reponds de facon concise, pratique et encourageante. Parfois tu peux glisser un mot en Lingala (Mbote, Boyei bolamu). Reponds en 2-4 phrases maximum.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        system: context,
+        messages: _aiChatHistory.slice(-6),
+      })
+    });
+
+    aiChatTyping(false);
+
+    if (response.ok) {
+      const data = await response.json();
+      const reply = data.content?.[0]?.text || 'Je suis desolee, je nai pas pu traiter votre question.';
+      _aiChatHistory.push({role:'assistant', content: reply});
+      aiChatAddMessage('assistant', reply);
+      // Lire la réponse à voix haute
+      aiSpeak(reply);
+    } else {
+      throw new Error('API error');
+    }
+  } catch(e) {
+    aiChatTyping(false);
+    // Fallback : réponse scriptée
+    const fallback = aiGetFallbackResponse(question);
+    _aiChatHistory.push({role:'assistant', content: fallback});
+    aiChatAddMessage('assistant', fallback + ' (mode hors ligne - connexion limitee)');
+    aiSpeak(fallback + '. Je suis en mode hors ligne, mais je fais de mon mieux !');
+  }
+}
+
+function aiGetFallbackResponse(question) {
+  const q = question.toLowerCase();
+  const d = aiGetData();
+  const name = STATE.user?.username?.split(' ')[0] || 'ami';
+  if (q.includes('epargn')) return `Votre epargne actuelle est de ${Math.round(d.epg/1000)} mille francs ce mois. Visez au moins 10 pourcent de vos revenus, soit ${Math.round(d.rev*0.1/1000)} mille francs.`;
+  if (q.includes('dette') || q.includes('credit')) return `Vous avez ${d.activeDettes.length} dette(s) active(s). Remboursez regulierement et evitez de nouveaux credits non essentiels.`;
+  if (q.includes('depens')) return `Vos depenses representent ${d.pct} pourcent de vos revenus. ${d.pct > 70 ? 'Cest eleve, reduisez les depenses variables.' : 'Cest bien maitrise, continuez !'}`;
+  if (q.includes('revenu') || q.includes('salaire')) return `Vos revenus sont de ${Math.round(d.rev/1000)} mille francs ce mois. Diversifiez vos sources pour plus de stabilite.`;
+  if (q.includes('solde') || q.includes('bilan')) return `Votre solde net est de ${Math.round(d.solde/1000)} mille francs. ${d.solde >= 0 ? 'Positif, bonne gestion !' : 'Negatif, reduisez vos depenses urgemment.'}`;
+  if (q.includes('conseil') || q.includes('aide')) return `Mon conseil du moment : ${d.epg === 0 ? 'commencez par epargner, meme un petit montant chaque mois.' : 'continuez vos efforts, vous etes sur la bonne voie !'}`;
+  return `Bonne question ${name} ! En resume : revenus ${Math.round(d.rev/1000)}k, depenses ${Math.round(d.dep/1000)}k, epargne ${Math.round(d.epg/1000)}k, solde ${Math.round(d.solde/1000)}k. Consultez vos details dans chaque section.`;
+}
+
+function aiChatListen() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    notify('Reconnaissance vocale non disponible sur ce navigateur.', 'var(--orange)'); return;
+  }
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new Rec();
+  rec.lang = 'fr-FR'; rec.interimResults = false; rec.maxAlternatives = 1;
+  const micBtn = document.getElementById('ai-mic-btn');
+  if (micBtn) { micBtn.textContent = '🔴'; micBtn.style.background = 'rgba(255,107,107,0.2)'; }
+  rec.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    const input = document.getElementById('ai-chat-input');
+    if (input) input.value = transcript;
+    if (micBtn) { micBtn.textContent = '🎤'; micBtn.style.background = ''; }
+    setTimeout(() => aiChatSend(), 400);
+  };
+  rec.onerror = () => {
+    if (micBtn) { micBtn.textContent = '🎤'; micBtn.style.background = ''; }
+    notify('Micro indisponible. Tapez votre question.', 'var(--orange)');
+  };
+  rec.start();
+}
+
+function aiStartListening() {
+  if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    notify('Reconnaissance vocale non disponible.', 'var(--orange)'); return;
+  }
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = new Rec();
+  rec.lang = 'fr-FR'; rec.interimResults = false;
+  const micBtn = document.getElementById('ai-mic-btn2');
+  if (micBtn) { micBtn.textContent = '🔴'; micBtn.style.background = 'rgba(255,107,107,0.2)'; }
+  rec.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    const input = document.getElementById('ai-reply-input');
+    if (input) input.value = transcript;
+    if (micBtn) { micBtn.textContent = '🎤'; micBtn.style.background = ''; }
+    setTimeout(() => aiSendReply(), 500);
+  };
+  rec.onerror = () => {
+    if (micBtn) { micBtn.textContent = '🎤'; micBtn.style.background = ''; }
+  };
+  rec.start();
+}
+
+function initAI() {
+  if (!window.speechSynthesis) return;
+  const tryGreet = () => {
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) { aiPickVoice(); aiGreet(); }
+    else { window.speechSynthesis.onvoiceschanged = () => { aiPickVoice(); aiGreet(); }; }
+  };
+  setTimeout(tryGreet, 800);
+  // Timer aléatoire entre 1 et 5 minutes
+  function aiScheduleNext() {
+    const delayMs = (Math.floor(Math.random() * 5) + 1) * 60 * 1000;
+    setTimeout(() => {
+      if (!_aiSpeaking && !_aiAwaitingReply) aiAnalyzeAndSpeak();
+      aiScheduleNext();
+    }, delayMs);
+  }
+  aiScheduleNext();
+}
+
+
 init();
 </script>
+
+<!-- IA VOCALE FINANCIÈRE -->
+<div id="ai-bubble-container" style="position:fixed;bottom:28px;right:28px;z-index:9998;display:flex;flex-direction:column;align-items:flex-end;gap:10px">
+  <!-- Bulle de texte -->
+  <div id="ai-speech-bubble" style="display:none;max-width:280px;background:var(--card);border:1px solid rgba(99,140,255,0.4);border-radius:16px;padding:14px 16px;font-size:13px;color:var(--text);line-height:1.5;box-shadow:0 8px 32px rgba(0,0,0,0.4);position:relative;animation:bubbleIn 0.3s ease">
+    <div id="ai-speech-text"></div>
+    <div style="position:absolute;bottom:-8px;right:28px;width:16px;height:16px;background:var(--card);border-right:1px solid rgba(99,140,255,0.4);border-bottom:1px solid rgba(99,140,255,0.4);transform:rotate(45deg)"></div>
+  </div>
+  <!-- Interface chat Aria -->
+  <div id="ai-chat-box" style="display:none;width:320px;background:var(--card);border:1px solid rgba(99,140,255,0.35);border-radius:18px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);animation:bubbleIn 0.3s ease">
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,rgba(99,140,255,0.2),rgba(192,132,252,0.2));padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#638cff,#c084fc);display:flex;align-items:center;justify-content:center;font-size:16px">🎙️</div>
+        <div>
+          <div style="font-weight:700;font-size:13px;color:var(--text)">Aria</div>
+          <div style="font-size:10px;color:var(--green);display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;background:var(--green);border-radius:50%;display:inline-block"></span> En ligne · IA active</div>
+        </div>
+      </div>
+      <button onclick="aiToggleChat()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:4px">×</button>
+    </div>
+    <!-- Messages -->
+    <div id="ai-chat-messages" style="height:220px;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px">
+      <div style="text-align:center;font-size:11px;color:var(--text3)">Posez-moi n'importe quelle question financière !</div>
+    </div>
+    <!-- Input -->
+    <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">
+      <input type="text" id="ai-chat-input" placeholder="Posez une question à Aria..." style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text);font-size:13px;padding:9px 12px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')aiChatSend()">
+      <button onclick="aiChatSend()" style="background:var(--accent);border:none;border-radius:10px;color:white;padding:9px 12px;cursor:pointer;font-size:14px;flex-shrink:0">↵</button>
+      <button onclick="aiChatListen()" id="ai-mic-btn" style="background:var(--bg3);border:1px solid var(--border2);border-radius:10px;color:var(--text2);padding:9px 11px;cursor:pointer;font-size:15px;flex-shrink:0" title="Parler">🎤</button>
+    </div>
+  </div>
+  <!-- Boîte réponse simple (pour questions interactives) -->
+  <div id="ai-reply-box" style="display:none;background:var(--card);border:1px solid rgba(99,140,255,0.4);border-radius:14px;padding:12px;width:280px;animation:bubbleIn 0.3s ease">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:8px;letter-spacing:1px;text-transform:uppercase">Votre réponse</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="ai-reply-input" placeholder="Tapez votre réponse..." style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-size:13px;padding:8px 10px;outline:none;font-family:inherit" onkeydown="if(event.key==='Enter')aiSendReply()">
+      <button onclick="aiSendReply()" style="background:var(--accent);border:none;border-radius:8px;color:white;padding:8px 10px;cursor:pointer;font-size:14px">↵</button>
+      <button onclick="aiStartListening()" id="ai-mic-btn2" style="background:var(--bg3);border:1px solid var(--border2);border-radius:8px;color:var(--text2);padding:8px 10px;cursor:pointer;font-size:14px" title="Parler">🎤</button>
+    </div>
+    <button onclick="aiCloseReply()" style="width:100%;margin-top:8px;background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer">Ignorer</button>
+  </div>
+  <!-- Bouton bulle animée -->
+  <div id="ai-orb" onclick="toggleAI()" ondblclick="aiToggleChat()" style="width:58px;height:58px;border-radius:50%;background:linear-gradient(135deg,#638cff,#c084fc);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(99,140,255,0.5);position:relative;transition:transform 0.2s" title="Clic: parler | Double-clic: chat">
+    <div id="ai-orb-inner" style="width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,#7aa0ff,#d4a0ff);display:flex;align-items:center;justify-content:center;font-size:22px">🎙️</div>
+    <div id="ai-ring1" style="display:none;position:absolute;inset:-8px;border-radius:50%;border:2px solid rgba(99,140,255,0.5);animation:ringPulse 1.2s ease-out infinite"></div>
+    <div id="ai-ring2" style="display:none;position:absolute;inset:-16px;border-radius:50%;border:2px solid rgba(99,140,255,0.3);animation:ringPulse 1.2s ease-out 0.4s infinite"></div>
+    <div id="ai-ring3" style="display:none;position:absolute;inset:-24px;border-radius:50%;border:2px solid rgba(99,140,255,0.15);animation:ringPulse 1.2s ease-out 0.8s infinite"></div>
+  </div>
+</div>
+
+<style>
+@keyframes ringPulse{0%{transform:scale(1);opacity:1}100%{transform:scale(1.3);opacity:0}}
+@keyframes bubbleIn{from{opacity:0;transform:translateY(10px) scale(0.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes orbIdle{0%,100%{box-shadow:0 4px 20px rgba(99,140,255,0.5)}50%{box-shadow:0 4px 30px rgba(192,132,252,0.7)}}
+#ai-orb{animation:orbIdle 3s ease-in-out infinite}
+#ai-orb:hover{transform:scale(1.08)!important}
+</style>
+
 </body>
 </html>
