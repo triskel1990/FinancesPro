@@ -1390,19 +1390,16 @@ async function refreshSettings() {
     }
   }
 
-  // Catégories
-  const cl = document.getElementById('cat-list'); cl.innerHTML = '';
-  STATE.categories.forEach(cat => {
-    cl.innerHTML += `<div class="summary-row"><span>${cat.icon} ${cat.name}</span><button class="btn btn-danger btn-sm" onclick="deleteCat('${cat.id}')">Supprimer</button></div>`;
-  });
-
   // Utilisateurs (admin only)
   const su = document.getElementById('section-users');
+  if (!su) return;
   if (STATE.user?.role === 'admin') {
     su.style.display = '';
     const users = await api('GET', '/api/users');
-    if (users) {
-      const ul = document.getElementById('users-list'); ul.innerHTML = '';
+    if (users && Array.isArray(users)) {
+      const ul = document.getElementById('users-list');
+      if (!ul) return;
+      ul.innerHTML = '';
       users.forEach(u => {
         ul.innerHTML += `<div class="summary-row"><div><div style="font-weight:600;font-size:13px">${u.username}</div><div style="font-size:11px;color:var(--text3)">${u.role==='admin'?'👑 Admin':'👁️ Lecteur'} · ${new Date(u.created_at).toLocaleDateString('fr-FR')}</div></div>${u.id!==STATE.user.id?`<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id})">Supprimer</button>`:'<span style="font-size:11px;color:var(--text3)">Vous</span>'}</div>`;
       });
