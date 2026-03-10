@@ -666,7 +666,7 @@ def tts_proxy():
     if not text:
         return jsonify({'error': 'Texte manquant'}), 400
 
-    ELEVEN_KEY = os.environ.get('ELEVENLABS_API_KEY', 'sk_3e20ac4691daea9a3444ab149a290f575504f369ed215f59')
+    ELEVEN_KEY = os.environ.get('ELEVENLABS_API_KEY', 'sk_e143c457719f251b68733df20996fd02419b3a2ed568ed8a')
     ELEVEN_VID = os.environ.get('ELEVENLABS_VOICE_ID', 'PSVUmed8NvS8aUA3d5oO')
 
     try:
