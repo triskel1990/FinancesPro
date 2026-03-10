@@ -1911,8 +1911,7 @@ let _aiReplyCallback = null;
 let _aiListening = false;
 
 // Selection de la meilleure voix feminine francaise
-const _ELEVEN_KEY = 'sk_3e20ac4691daea9a3444ab149a290f575504f369ed215f59';
-const _ELEVEN_VID = 'PSVUmed8NvS8aUA3d5oO';
+// Cles ElevenLabs gerees par le backend Flask
 let _ariaVoice = null;
 function aiPickVoice() {
   const voices = window.speechSynthesis.getVoices();
@@ -1933,19 +1932,20 @@ function aiClean(t){return t.replace(/[\u{1F300}-\u{1FAFF}]/gu,'').replace(/[\u2
 async function aiSpeakEL(text,onEnd){
   const clean=aiClean(text); aiShowBubble(clean); aiSetSpeaking(true);
   try{
-    const r=await fetch('https://api.elevenlabs.io/v1/text-to-speech/'+_ELEVEN_VID+'/stream',{
+    // Passer par le proxy Flask pour eviter CORS
+    const r=await fetch('/api/tts',{
       method:'POST',
-      headers:{'xi-api-key':_ELEVEN_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({text:clean,model_id:'eleven_multilingual_v2',voice_settings:{stability:0.45,similarity_boost:0.88,style:0.35,use_speaker_boost:true}})
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:clean})
     });
-    if(!r.ok)throw new Error('EL '+r.status);
+    if(!r.ok)throw new Error('TTS proxy '+r.status);
     const blob=await r.blob(); const url=URL.createObjectURL(blob);
     const audio=new Audio(url);
     audio.onended=()=>{URL.revokeObjectURL(url);aiSetSpeaking(false);aiHideBubble();if(onEnd)onEnd();};
     audio.onerror=()=>{aiSetSpeaking(false);aiHideBubble();if(onEnd)onEnd();};
     audio.play();
   }catch(e){
-    console.warn('[Aria] ElevenLabs indisponible:',e.message);
+    console.warn('[Aria] TTS indisponible, fallback:',e.message);
     aiSpeakFallback(text,onEnd);
   }
 }

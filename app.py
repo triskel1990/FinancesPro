@@ -655,6 +655,37 @@ with app.app_context():
         except Exception:
             pass
 
+
+@app.route('/api/tts', methods=['POST'])
+@login_required
+def tts_proxy():
+    """Proxy ElevenLabs TTS pour eviter les problemes CORS"""
+    import requests as req
+    data = request.get_json()
+    text = data.get('text', '')
+    if not text:
+        return jsonify({'error': 'Texte manquant'}), 400
+
+    ELEVEN_KEY = os.environ.get('ELEVENLABS_API_KEY', 'sk_3e20ac4691daea9a3444ab149a290f575504f369ed215f59')
+    ELEVEN_VID = os.environ.get('ELEVENLABS_VOICE_ID', 'PSVUmed8NvS8aUA3d5oO')
+
+    try:
+        resp = req.post(
+            f'https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VID}/stream',
+            headers={'xi-api-key': ELEVEN_KEY, 'Content-Type': 'application/json'},
+            json={
+                'text': text,
+                'model_id': 'eleven_multilingual_v2',
+                'voice_settings': {'stability': 0.45, 'similarity_boost': 0.88, 'style': 0.35, 'use_speaker_boost': True}
+            },
+            timeout=15
+        )
+        if resp.status_code != 200:
+            return jsonify({'error': f'ElevenLabs error {resp.status_code}'}), 502
+        return Response(resp.content, mimetype='audio/mpeg')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
 if __name__ == '__main__':
     mode = 'OFFLINE (SQLite local)' if _using_sqlite else 'ONLINE (PostgreSQL Railway)'
     print(f'[FinancesPro] Démarrage en mode {mode}')
