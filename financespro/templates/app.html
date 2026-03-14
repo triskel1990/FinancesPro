@@ -802,18 +802,18 @@ async function init() {
     if (me.role !== 'admin') document.getElementById('section-users').style.display = 'none';
   }
 
-  // Load server data to local
+  // Charger catégories et modèles depuis le serveur (pas dans sync)
   document.getElementById('loading-msg').textContent = 'Chargement des données…';
-  const [cats, revs, deps, dets] = await Promise.all([
+  const [cats, revs, deps] = await Promise.all([
     api('GET', '/api/categories'),
     api('GET', '/api/revenus'),
     api('GET', '/api/depenses-templates'),
-    api('GET', '/api/dettes'),
   ]);
   if (cats && cats.length) { STATE.categories = cats; LS.set('categories', cats); }
   if (revs && revs.length) { STATE.revenus_templates = revs; LS.set('revenus_templates', revs); }
   if (deps && deps.length) LS.set('depenses_templates', deps);
-  if (dets && dets.length) { STATE.dettes = dets; LS.set('dettes', dets); }
+  // NOTE : les dettes sont gérées exclusivement par doSync() ci-dessous
+  // Ne PAS faire GET /api/dettes ici — ça écraserait les données locales
 
   updateTauxDisplay();
   checkOnline();

@@ -189,8 +189,12 @@ class Dette(db.Model):
     monthly    = db.Column(db.Float, default=0)
     paid       = db.Column(db.Float, default=0)
     notes      = db.Column(db.String(255))
-    done       = db.Column(db.Boolean, default=False)
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    done               = db.Column(db.Boolean, default=False)
+    autopay            = db.Column(db.Boolean, default=False)
+    autopay_day        = db.Column(db.Integer, nullable=True)
+    autopay_amount     = db.Column(db.Float, nullable=True)
+    last_autopay_month = db.Column(db.String(7), nullable=True)
+    updated_at         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 class SyncLog(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
@@ -455,12 +459,19 @@ def api_mois_list():
 def api_dettes():
     if request.method == 'POST':
         d = request.get_json()
-        dette = Dette(user_id=current_user.id, name=d['name'], bank=d.get('bank',''), total=d.get('total',0), monthly=d.get('monthly',0), paid=d.get('paid',0), notes=d.get('notes',''))
+        dette = Dette(user_id=current_user.id, name=d['name'], bank=d.get('bank',''),
+            total=d.get('total',0), monthly=d.get('monthly',0), paid=d.get('paid',0),
+            notes=d.get('notes',''), autopay=d.get('autopay',False),
+            autopay_day=d.get('autopay_day',None), autopay_amount=d.get('autopay_amount',None))
         db.session.add(dette)
         db.session.commit()
         return jsonify({'ok':True,'id':dette.id})
     dettes = Dette.query.filter_by(user_id=current_user.id).all()
-    return jsonify([{'id':d.id,'name':d.name,'bank':d.bank,'total':d.total,'monthly':d.monthly,'paid':d.paid,'notes':d.notes,'done':d.done,'updated_at':d.updated_at.isoformat()} for d in dettes])
+    return jsonify([{'id':d.id,'name':d.name,'bank':d.bank,'total':d.total,
+        'monthly':d.monthly,'paid':d.paid,'notes':d.notes,'done':d.done,
+        'autopay':bool(d.autopay),'autopay_day':d.autopay_day,
+        'autopay_amount':d.autopay_amount,'last_autopay_month':d.last_autopay_month,
+        'updated_at':d.updated_at.isoformat()} for d in dettes])
 
 @app.route('/api/dettes/<did>', methods=['PUT','DELETE'])
 @login_required
@@ -471,7 +482,8 @@ def api_dette(did):
         db.session.commit()
         return jsonify({'ok': True})
     d = request.get_json()
-    for field in ['name','bank','total','monthly','paid','notes','done']:
+    for field in ['name','bank','total','monthly','paid','notes','done',
+                  'autopay','autopay_day','autopay_amount','last_autopay_month']:
         if field in d:
             setattr(dette, field, d[field])
     db.session.commit()
@@ -520,18 +532,26 @@ def api_sync():
         if dette:
             existing_ts = dette.updated_at.isoformat()
             if incoming_ts >= existing_ts:
-                for f in ['name','bank','total','monthly','paid','notes','done']:
+                for f in ['name','bank','total','monthly','paid','notes','done',
+                          'autopay','autopay_day','autopay_amount','last_autopay_month']:
                     if f in d_data: setattr(dette, f, d_data[f])
         else:
             dette = Dette(id=d_data.get('id', str(uuid.uuid4())), user_id=current_user.id,
                 name=d_data.get('name',''), bank=d_data.get('bank',''),
                 total=d_data.get('total',0), monthly=d_data.get('monthly',0),
-                paid=d_data.get('paid',0), notes=d_data.get('notes',''), done=d_data.get('done',False))
+                paid=d_data.get('paid',0), notes=d_data.get('notes',''), done=d_data.get('done',False),
+                autopay=d_data.get('autopay',False), autopay_day=d_data.get('autopay_day',None),
+                autopay_amount=d_data.get('autopay_amount',None),
+                last_autopay_month=d_data.get('last_autopay_month',None))
             db.session.add(dette)
 
     db.session.commit()
     all_dettes = Dette.query.filter_by(user_id=current_user.id).all()
-    merged['dettes'] = [{'id':d.id,'name':d.name,'bank':d.bank,'total':d.total,'monthly':d.monthly,'paid':d.paid,'notes':d.notes,'done':d.done,'updated_at':d.updated_at.isoformat()} for d in all_dettes]
+    merged['dettes'] = [{'id':d.id,'name':d.name,'bank':d.bank,'total':d.total,
+        'monthly':d.monthly,'paid':d.paid,'notes':d.notes,'done':d.done,
+        'autopay':bool(d.autopay),'autopay_day':d.autopay_day,
+        'autopay_amount':d.autopay_amount,'last_autopay_month':d.last_autopay_month,
+        'updated_at':d.updated_at.isoformat()} for d in all_dettes]
 
     log = SyncLog(user_id=current_user.id, action='sync', table_name='full', record_id='*')
     db.session.add(log)
@@ -643,6 +663,20 @@ def api_mode():
 
 with app.app_context():
     db.create_all()
+    # Migration auto — ajoute colonnes manquantes sans toucher aux données
+    try:
+        with db.engine.connect() as conn:
+            for sql in [
+                "ALTER TABLE dette ADD COLUMN IF NOT EXISTS autopay BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE dette ADD COLUMN IF NOT EXISTS autopay_day INTEGER",
+                "ALTER TABLE dette ADD COLUMN IF NOT EXISTS autopay_amount FLOAT",
+                "ALTER TABLE dette ADD COLUMN IF NOT EXISTS last_autopay_month VARCHAR(7)",
+            ]:
+                try: conn.execute(db.text(sql))
+                except Exception: pass
+            conn.commit()
+    except Exception as e:
+        print(f"[Migration] {e}")
     if _using_sqlite:
         count = User.query.count()
         if count == 0:
