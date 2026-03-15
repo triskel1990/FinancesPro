@@ -1,9 +1,0 @@
-.env
-instance/
-*.db
-piper_models/
-piper/
-__pycache__/
-*.pyc
-*.pyo
-.DS_Store
