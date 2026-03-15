@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Reset FinancesPro — Navigateur</title>
+<style>
+  body { font-family: sans-serif; background: #0d1117; color: #c8d8f0;
+         display: flex; align-items: center; justify-content: center;
+         min-height: 100vh; margin: 0; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 16px;
+          padding: 40px; max-width: 480px; text-align: center; }
+  h1 { color: #ff6b6b; margin-bottom: 8px; }
+  p { color: #8fa3cc; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+  .btn { padding: 12px 28px; border-radius: 10px; border: none; cursor: pointer;
+         font-size: 15px; font-weight: 600; transition: opacity 0.2s; }
+  .btn:hover { opacity: 0.85; }
+  .btn-danger { background: #ff6b6b; color: white; margin-right: 10px; }
+  .btn-sec { background: #30363d; color: #c8d8f0; }
+  .result { margin-top: 20px; padding: 12px; border-radius: 10px;
+            font-size: 13px; display: none; }
+  .result.ok  { background: rgba(52,217,135,0.1); border: 1px solid #34d987; color: #34d987; }
+  .result.err { background: rgba(255,107,107,0.1); border: 1px solid #ff6b6b; color: #ff6b6b; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div style="font-size:48px;margin-bottom:12px">🗑️</div>
+  <h1>Reset FinancesPro</h1>
+  <p>
+    Cette page efface toutes les données locales de FinancesPro
+    enregistrées dans ce navigateur (localStorage).<br><br>
+    <strong>⚠️ Cette action est irréversible.</strong><br>
+    Les données sur le serveur Railway ne sont pas affectées par cette page.
+  </p>
+  <div>
+    <button class="btn btn-danger" onclick="resetLocal()">🗑️ Effacer les données locales</button>
+    <button class="btn btn-sec" onclick="window.close()">Annuler</button>
+  </div>
+  <div id="result" class="result"></div>
+</div>
+
+<script>
+function resetLocal() {
+  try {
+    const keys = Object.keys(localStorage).filter(k =>
+      ['mois','dettes','categories','revenus_templates','depenses_templates',
+       'taux','lastSync','mois_clotures','epargnes','decaissements'].includes(k)
+      || k.startsWith('profile_pic_')
+    );
+    keys.forEach(k => localStorage.removeItem(k));
+    const res = document.getElementById('result');
+    res.className = 'result ok';
+    res.style.display = 'block';
+    res.innerHTML = '✅ ' + keys.length + ' clé(s) supprimée(s) : ' + (keys.join(', ') || 'aucune') +
+      '<br><br><a href="http://localhost:5000" style="color:#34d987">→ Retourner à FinancesPro</a>';
+  } catch(e) {
+    const res = document.getElementById('result');
+    res.className = 'result err';
+    res.style.display = 'block';
+    res.textContent = 'Erreur : ' + e.message;
+  }
+}
+</script>
+</body>
+</html>
