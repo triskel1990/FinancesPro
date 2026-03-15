@@ -15,11 +15,16 @@ import uuid
 # Charger .env en local (ignoré si la variable est déjà définie, ex: sur Railway)
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    # override=False : les variables déjà définies (Railway/Dockerfile) ne sont PAS écrasées
+    load_dotenv(override=False)
 except ImportError:
     pass
 
 app = Flask(__name__)
+
+# ── Blueprint Piper TTS + recherche ──
+from routes.tts import tts_bp
+app.register_blueprint(tts_bp, url_prefix='/api')
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changez-moi-en-production-!@#$%')
 app.config['REMEMBER_COOKIE_DURATION'] = 60 * 60 * 24 * 30  # 30 jours
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -184,8 +189,12 @@ class Dette(db.Model):
     monthly    = db.Column(db.Float, default=0)
     paid       = db.Column(db.Float, default=0)
     notes      = db.Column(db.String(255))
-    done       = db.Column(db.Boolean, default=False)
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    done               = db.Column(db.Boolean, default=False)
+    autopay            = db.Column(db.Boolean, default=False)
+    autopay_day        = db.Column(db.Integer, nullable=True)
+    autopay_amount     = db.Column(db.Float, nullable=True)
+    last_autopay_month = db.Column(db.String(7), nullable=True)
+    updated_at         = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 class SyncLog(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
@@ -450,12 +459,19 @@ def api_mois_list():
 def api_dettes():
     if request.method == 'POST':
         d = request.get_json()
-        dette = Dette(user_id=current_user.id, name=d['name'], bank=d.get('bank',''), total=d.get('total',0), monthly=d.get('monthly',0), paid=d.get('paid',0), notes=d.get('notes',''))
+        dette = Dette(user_id=current_user.id, name=d['name'], bank=d.get('bank',''),
+            total=d.get('total',0), monthly=d.get('monthly',0), paid=d.get('paid',0),
+            notes=d.get('notes',''), autopay=d.get('autopay',False),
+            autopay_day=d.get('autopay_day',None), autopay_amount=d.get('autopay_amount',None))
         db.session.add(dette)
         db.session.commit()
         return jsonify({'ok':True,'id':dette.id})
     dettes = Dette.query.filter_by(user_id=current_user.id).all()
-    return jsonify([{'id':d.id,'name':d.name,'bank':d.bank,'total':d.total,'monthly':d.monthly,'paid':d.paid,'notes':d.notes,'done':d.done,'updated_at':d.updated_at.isoformat()} for d in dettes])
+    return jsonify([{'id':d.id,'name':d.name,'bank':d.bank,'total':d.total,
+        'monthly':d.monthly,'paid':d.paid,'notes':d.notes,'done':d.done,
+        'autopay':bool(d.autopay),'autopay_day':d.autopay_day,
+        'autopay_amount':d.autopay_amount,'last_autopay_month':d.last_autopay_month,
+        'updated_at':d.updated_at.isoformat()} for d in dettes])
 
 @app.route('/api/dettes/<did>', methods=['PUT','DELETE'])
 @login_required
@@ -466,7 +482,8 @@ def api_dette(did):
         db.session.commit()
         return jsonify({'ok': True})
     d = request.get_json()
-    for field in ['name','bank','total','monthly','paid','notes','done']:
+    for field in ['name','bank','total','monthly','paid','notes','done',
+                  'autopay','autopay_day','autopay_amount','last_autopay_month']:
         if field in d:
             setattr(dette, field, d[field])
     db.session.commit()
@@ -515,18 +532,26 @@ def api_sync():
         if dette:
             existing_ts = dette.updated_at.isoformat()
             if incoming_ts >= existing_ts:
-                for f in ['name','bank','total','monthly','paid','notes','done']:
+                for f in ['name','bank','total','monthly','paid','notes','done',
+                          'autopay','autopay_day','autopay_amount','last_autopay_month']:
                     if f in d_data: setattr(dette, f, d_data[f])
         else:
             dette = Dette(id=d_data.get('id', str(uuid.uuid4())), user_id=current_user.id,
                 name=d_data.get('name',''), bank=d_data.get('bank',''),
                 total=d_data.get('total',0), monthly=d_data.get('monthly',0),
-                paid=d_data.get('paid',0), notes=d_data.get('notes',''), done=d_data.get('done',False))
+                paid=d_data.get('paid',0), notes=d_data.get('notes',''), done=d_data.get('done',False),
+                autopay=d_data.get('autopay',False), autopay_day=d_data.get('autopay_day',None),
+                autopay_amount=d_data.get('autopay_amount',None),
+                last_autopay_month=d_data.get('last_autopay_month',None))
             db.session.add(dette)
 
     db.session.commit()
     all_dettes = Dette.query.filter_by(user_id=current_user.id).all()
-    merged['dettes'] = [{'id':d.id,'name':d.name,'bank':d.bank,'total':d.total,'monthly':d.monthly,'paid':d.paid,'notes':d.notes,'done':d.done,'updated_at':d.updated_at.isoformat()} for d in all_dettes]
+    merged['dettes'] = [{'id':d.id,'name':d.name,'bank':d.bank,'total':d.total,
+        'monthly':d.monthly,'paid':d.paid,'notes':d.notes,'done':d.done,
+        'autopay':bool(d.autopay),'autopay_day':d.autopay_day,
+        'autopay_amount':d.autopay_amount,'last_autopay_month':d.last_autopay_month,
+        'updated_at':d.updated_at.isoformat()} for d in all_dettes]
 
     log = SyncLog(user_id=current_user.id, action='sync', table_name='full', record_id='*')
     db.session.add(log)
@@ -638,6 +663,20 @@ def api_mode():
 
 with app.app_context():
     db.create_all()
+    # Migration auto — ajoute colonnes manquantes sans toucher aux données
+    try:
+        with db.engine.connect() as conn:
+            for sql in [
+                "ALTER TABLE dette ADD COLUMN IF NOT EXISTS autopay BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE dette ADD COLUMN IF NOT EXISTS autopay_day INTEGER",
+                "ALTER TABLE dette ADD COLUMN IF NOT EXISTS autopay_amount FLOAT",
+                "ALTER TABLE dette ADD COLUMN IF NOT EXISTS last_autopay_month VARCHAR(7)",
+            ]:
+                try: conn.execute(db.text(sql))
+                except Exception: pass
+            conn.commit()
+    except Exception as e:
+        print(f"[Migration] {e}")
     if _using_sqlite:
         count = User.query.count()
         if count == 0:
@@ -656,35 +695,7 @@ with app.app_context():
             pass
 
 
-@app.route('/api/tts', methods=['POST'])
-@login_required
-def tts_proxy():
-    """Proxy ElevenLabs TTS pour eviter les problemes CORS"""
-    import requests as req
-    data = request.get_json()
-    text = data.get('text', '')
-    if not text:
-        return jsonify({'error': 'Texte manquant'}), 400
 
-    ELEVEN_KEY = os.environ.get('ELEVENLABS_API_KEY', 'sk_e143c457719f251b68733df20996fd02419b3a2ed568ed8a')
-    ELEVEN_VID = os.environ.get('ELEVENLABS_VOICE_ID', 'PSVUmed8NvS8aUA3d5oO')
-
-    try:
-        resp = req.post(
-            f'https://api.elevenlabs.io/v1/text-to-speech/{ELEVEN_VID}/stream',
-            headers={'xi-api-key': ELEVEN_KEY, 'Content-Type': 'application/json'},
-            json={
-                'text': text,
-                'model_id': 'eleven_multilingual_v2',
-                'voice_settings': {'stability': 0.45, 'similarity_boost': 0.88, 'style': 0.35, 'use_speaker_boost': True}
-            },
-            timeout=15
-        )
-        if resp.status_code != 200:
-            return jsonify({'error': f'ElevenLabs error {resp.status_code}'}), 502
-        return Response(resp.content, mimetype='audio/mpeg')
-    except Exception as e:
-        return jsonify({'error': str(e)}), 502
 
 if __name__ == '__main__':
     mode = 'OFFLINE (SQLite local)' if _using_sqlite else 'ONLINE (PostgreSQL Railway)'
